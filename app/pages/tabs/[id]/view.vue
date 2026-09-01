@@ -13,7 +13,7 @@ const strings = computed(() => openStrings(tab.value?.tuning ?? ''))
 </script>
 
 <template>
-  <div v-if="tab" class="mx-auto w-full max-w-5xl px-4 py-8">
+  <div v-if="tab" class="mx-auto w-full max-w-7xl px-4 py-8">
     <div class="mb-8 flex items-start justify-between gap-4 print:hidden">
       <NuxtLink to="/" class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm">
         <ArrowLeft class="size-4" /> Library
@@ -31,7 +31,7 @@ const strings = computed(() => openStrings(tab.value?.tuning ?? ''))
       </p>
     </header>
 
-    <TabSheet :bars="tab.content.bars" />
+    <TabSheet :bars="tab.content.bars" :bars-per-row="tab.content.barsPerRow ?? 4" />
 
     <p v-if="!tab.content.bars.length" class="text-muted-foreground text-sm">
       Nothing written yet.

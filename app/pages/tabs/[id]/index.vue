@@ -3,9 +3,10 @@ import { ArrowLeft, Eye, Plus, Trash2 } from 'lucide-vue-next'
 import { useDebounceFn } from '@vueuse/core'
 import type { Bar, StringNumber, TabContent, TabEvent } from '#shared/tab'
 import {
-  MAX_FRET, ORNAMENTS, ORNAMENT_LABELS, STRING_LABELS, TUNINGS,
-  newBar, newNote, newRest,
+  FINGERS, FINGER_NUMERALS, MAX_FRET, ORNAMENTS, ORNAMENT_LABELS, STRING_LABELS,
+  TUNINGS, newBar, newNote, newRest,
 } from '#shared/tab'
+import type { Finger } from '#shared/tab'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -13,7 +14,11 @@ const id = route.params.id as string
 const { data: tab } = await useFetch(`/api/tabs/${id}`)
 useHead({ title: () => tab.value?.title ?? 'Tab' })
 
-const content = ref<TabContent>(tab.value?.content ?? { bars: [] })
+const content = ref<TabContent>(
+  tab.value?.content ?? { bars: [], barsPerRow: 4 },
+)
+// Tabs written before this setting existed have no value stored.
+if (!content.value.barsPerRow) content.value.barsPerRow = 4
 const activeBarId = ref<string | null>(content.value.bars.at(-1)?.id ?? null)
 const selectedEventId = ref<string | null>(null)
 /** Where the next added event lands. null = append to the end of the bar. */
@@ -144,6 +149,13 @@ function cycleBeam() {
   event.beam = ((event.beam + 1) % 3) as 0 | 1 | 2
 }
 
+/** Clicking the finger already set clears it — no separate "none" button. */
+function toggleFinger(finger: Finger) {
+  const event = selected.value?.event
+  if (!event || event.kind !== 'note') return
+  event.finger = event.finger === finger ? null : finger
+}
+
 function setOrnament(value: string) {
   const event = selected.value?.event
   if (!event || event.kind !== 'note') return
@@ -152,7 +164,7 @@ function setOrnament(value: string) {
 </script>
 
 <template>
-  <div v-if="tab" class="mx-auto w-full max-w-5xl px-4 py-8">
+  <div v-if="tab" class="mx-auto w-full max-w-7xl px-4 py-8">
     <div class="mb-6 flex items-center justify-between gap-4">
       <NuxtLink to="/" class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm">
         <ArrowLeft class="size-4" /> Library
@@ -195,12 +207,24 @@ function setOrnament(value: string) {
       </div>
     </div>
 
+    <div class="mb-3 flex items-center gap-2">
+      <Label for="per-row" class="text-muted-foreground text-xs">Bars per row</Label>
+      <select
+        id="per-row"
+        v-model.number="content.barsPerRow"
+        class="border-input h-8 rounded-md border bg-transparent px-2 text-sm"
+      >
+        <option v-for="n in [1, 2, 3, 4, 5, 6, 8]" :key="n" :value="n">{{ n }}</option>
+      </select>
+    </div>
+
     <!-- The sheet -->
     <TabSheet
       :bars="content.bars"
       :active-bar-id="activeBarId"
       :selected-event-id="selectedEventId"
       :insert-index="insertIndex"
+      :bars-per-row="content.barsPerRow"
       interactive
       class="mb-4"
       @select-bar="selectBar"
@@ -290,6 +314,21 @@ function setOrnament(value: string) {
               :max="MAX_FRET"
               class="w-24"
             />
+          </div>
+          <div class="flex flex-col gap-2">
+            <Label>Finger</Label>
+            <div class="flex gap-1">
+              <button
+                v-for="f in FINGERS"
+                :key="f"
+                type="button"
+                class="h-8 w-9 cursor-pointer rounded border text-xs"
+                :class="selected.event.finger === f
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border'"
+                @click="toggleFinger(f)"
+              >{{ FINGER_NUMERALS[f] }}</button>
+            </div>
           </div>
           <div class="flex flex-col gap-2">
             <Label for="ornament">Ornament</Label>

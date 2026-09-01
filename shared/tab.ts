@@ -50,6 +50,9 @@ export const tabEventSchema = z.discriminatedUnion('kind', [
     fret: z.number().int().min(0).max(MAX_FRET),
     beam: z.union([z.literal(0), z.literal(1), z.literal(2)]).default(0),
     ornament: z.enum(ORNAMENTS).nullable().default(null),
+    /** Suggested left-hand finger, shown as a roman numeral under the note. */
+    finger: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
+      .nullable().default(null),
   }),
   z.object({
     id: z.string().min(1),
@@ -67,6 +70,8 @@ export const barSchema = z.object({
 /** Everything inside a tab that isn't metadata. Stored as jsonb. */
 export const tabContentSchema = z.object({
   bars: z.array(barSchema).max(512),
+  /** How many bars sit on one line. Defaults to 4, the usual phrase length. */
+  barsPerRow: z.number().int().min(1).max(8).default(4),
 })
 
 export type TabEvent = z.infer<typeof tabEventSchema>
@@ -158,7 +163,7 @@ export function getTuning(id: string) {
 
 /** Fresh empty content for a brand-new tab: one bar, waiting for notes. */
 export function emptyTabContent(): TabContent {
-  return { bars: [{ id: newId(), events: [] }] }
+  return { bars: [{ id: newId(), events: [] }], barsPerRow: 4 }
 }
 
 /** Line labels, top to bottom: ichi/ni/san no ito. */
@@ -178,8 +183,22 @@ export const ORNAMENT_GLYPHS: Record<Ornament, string> = {
 }
 
 export function newNote(string: StringNumber, fret: number): NoteEvent {
-  return { id: newId(), kind: 'note', string, fret, beam: 0, ornament: null }
+  return { id: newId(), kind: 'note', string, fret, beam: 0, ornament: null, finger: null }
 }
+
+export const FINGERS = [1, 2, 3, 4] as const
+export type Finger = (typeof FINGERS)[number]
+
+/** Fingering is written as a roman numeral so it can't be read as a tsubo. */
+export const FINGER_NUMERALS: Record<Finger, string> = {
+  1: 'I', 2: 'II', 3: 'III', 4: 'IV',
+}
+
+/**
+ * Horizontal room a note takes up. Shorter notes sit closer together, so the
+ * spacing itself carries the rhythm the way it does on a real sheet.
+ */
+export const EVENT_WIDTH: Record<0 | 1 | 2, number> = { 0: 36, 1: 26, 2: 20 }
 
 export function newRest(): RestEvent {
   return { id: newId(), kind: 'rest', beam: 0 }

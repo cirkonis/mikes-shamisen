@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Bar, StringNumber, TabEvent } from '#shared/tab'
-import { ORNAMENT_GLYPHS, STRING_LABELS } from '#shared/tab'
+import { EVENT_WIDTH, FINGER_NUMERALS, ORNAMENT_GLYPHS, STRING_LABELS } from '#shared/tab'
 
 const props = withDefaults(defineProps<{
   bars: Bar[]
@@ -10,8 +10,11 @@ const props = withDefaults(defineProps<{
   activeBarId?: string | null
   /** Where in the active bar the next event lands. */
   insertIndex?: number | null
+  /** Bars per line. */
+  barsPerRow?: number
   interactive?: boolean
 }>(), {
+  barsPerRow: 4,
   selectedEventId: null,
   activeBarId: null,
   insertIndex: null,
@@ -25,8 +28,8 @@ const emit = defineEmits<{
 }>()
 
 /** Vertical position of each string's line, in px from the top of a bar. */
-const LINE_Y: Record<StringNumber, number> = { 1: 18, 2: 42, 3: 66 }
-const STAFF_HEIGHT = 96
+const LINE_Y: Record<StringNumber, number> = { 1: 24, 2: 48, 3: 72 }
+const STAFF_HEIGHT = 112
 
 function isNote(e: TabEvent): e is Extract<TabEvent, { kind: 'note' }> {
   return e.kind === 'note'
@@ -35,6 +38,11 @@ function isNote(e: TabEvent): e is Extract<TabEvent, { kind: 'note' }> {
 /** A rest sits on the middle line — it belongs to no single string. */
 function yFor(e: TabEvent) {
   return isNote(e) ? LINE_Y[e.string] : LINE_Y[2]
+}
+
+/** Shorter notes get less room, so spacing reads as rhythm. */
+function widthFor(e: TabEvent) {
+  return EVENT_WIDTH[e.beam]
 }
 
 function onEventClick(barId: string, eventId: string) {
@@ -48,7 +56,11 @@ function onEventClick(barId: string, eventId: string) {
     <div
       v-for="(bar, barIndex) in bars"
       :key="bar.id"
-      class="bg-sheet relative min-w-36 rounded-lg border transition-colors"
+      class="bg-sheet relative grow rounded-lg border transition-colors"
+      :style="{
+        flexBasis: `calc(${100 / barsPerRow}% - 0.75rem)`,
+        minWidth: 'max(9rem, fit-content)',
+      }"
       :class="[
         interactive && activeBarId === bar.id ? 'border-primary ring-primary/25 ring-2' : 'border-border',
         interactive ? 'cursor-pointer' : '',
@@ -90,7 +102,7 @@ function onEventClick(barId: string, eventId: string) {
             <button
               v-if="interactive"
               type="button"
-              class="group/gap relative w-2 shrink-0 cursor-pointer"
+              class="group/gap relative w-1.5 shrink-0 cursor-pointer"
               :style="{ height: `${STAFF_HEIGHT - 16}px` }"
               :aria-label="`Insert at position ${i + 1}`"
               @click.stop="emit('insertAt', bar.id, i)"
@@ -106,12 +118,12 @@ function onEventClick(barId: string, eventId: string) {
           <button
             type="button"
             :disabled="!interactive"
-            class="relative w-8 shrink-0 rounded transition-colors"
+            class="relative shrink-0 rounded transition-colors"
             :class="[
               interactive ? 'hover:bg-primary/10 cursor-pointer' : 'cursor-default',
               selectedEventId === event.id ? 'bg-primary/15 ring-primary ring-1' : '',
             ]"
-            :style="{ height: `${STAFF_HEIGHT - 16}px` }"
+            :style="{ height: `${STAFF_HEIGHT - 16}px`, width: `${widthFor(event)}px` }"
             @click.stop="onEventClick(bar.id, event.id)"
           >
             <!-- Ornament sits above the number, the way it is written by hand -->
@@ -131,9 +143,16 @@ function onEventClick(barId: string, eventId: string) {
             <span
               v-for="n in event.beam"
               :key="n"
-              class="bg-sheet-ink absolute left-1/2 h-px w-4 -translate-x-1/2"
-              :style="{ top: `${yFor(event) + 8 + n * 3}px` }"
+              class="bg-sheet-ink absolute left-1/2 h-px -translate-x-1/2"
+              :style="{ top: `${yFor(event) + 8 + n * 3}px`, width: `${widthFor(event) - 12}px` }"
             />
+
+            <!-- Suggested fingering, roman so it can't be misread as a tsubo -->
+            <span
+              v-if="isNote(event) && event.finger"
+              class="text-muted-foreground absolute left-1/2 -translate-x-1/2 text-[9px] leading-none"
+              :style="{ top: `${yFor(event) + 20}px` }"
+            >{{ FINGER_NUMERALS[event.finger] }}</span>
           </button>
           </template>
 
@@ -141,7 +160,7 @@ function onEventClick(barId: string, eventId: string) {
           <button
             v-if="interactive && bar.events.length"
             type="button"
-            class="group/gap relative w-2 shrink-0 cursor-pointer"
+            class="group/gap relative w-1.5 shrink-0 cursor-pointer"
             :style="{ height: `${STAFF_HEIGHT - 16}px` }"
             :aria-label="`Insert at the end`"
             @click.stop="emit('insertAt', bar.id, bar.events.length)"

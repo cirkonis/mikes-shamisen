@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { Bar, StringNumber, TabEvent } from '#shared/tab'
-import { EVENT_WIDTH, FINGER_NUMERALS, ORNAMENT_GLYPHS, STRING_LABELS } from '#shared/tab'
+import {
+  FINGER_NUMERALS, MID_BAR_SLOT, ORNAMENT_GLYPHS, SLOTS_PER_BAR, STRING_LABELS,
+  layOutBar,
+} from '#shared/tab'
 
 const props = withDefaults(defineProps<{
   bars: Bar[]
@@ -14,10 +17,10 @@ const props = withDefaults(defineProps<{
   barsPerRow?: number
   interactive?: boolean
 }>(), {
-  barsPerRow: 4,
   selectedEventId: null,
   activeBarId: null,
   insertIndex: null,
+  barsPerRow: 4,
   interactive: false,
 })
 
@@ -31,11 +34,13 @@ const emit = defineEmits<{
 const LINE_Y: Record<StringNumber, number> = { 1: 24, 2: 48, 3: 72 }
 const STAFF_HEIGHT = 112
 
+/** Enough room for a two-digit tsubo in a single sixteenth slot. */
+const MIN_SLOT_PX = 17
+
 function isNote(e: TabEvent): e is Extract<TabEvent, { kind: 'note' }> {
   return e.kind === 'note'
 }
 
-/** A rest sits on the middle line — it belongs to no single string. */
 function stopYs(e: TabEvent) {
   return isNote(e) ? e.stops.map((st) => LINE_Y[st.string]) : [LINE_Y[2]]
 }
@@ -49,14 +54,20 @@ function bottomY(e: TabEvent) {
   return Math.max(...stopYs(e))
 }
 
-/** Shorter notes get less room, so spacing reads as rhythm. */
-function widthFor(e: TabEvent) {
-  return EVENT_WIDTH[e.beam]
+/** One layout pass per bar, rather than recomputing it per mark in the template. */
+const layouts = computed(() => {
+  const map = new Map<string, ReturnType<typeof layOutBar>>()
+  for (const bar of props.bars) map.set(bar.id, layOutBar(bar))
+  return map
+})
+
+function lay(bar: Bar) {
+  return layouts.value.get(bar.id)!
 }
 
-function onEventClick(barId: string, eventId: string) {
-  if (!props.interactive) return
-  emit('selectEvent', barId, eventId)
+/** Slot offsets become percentages so a bar scales with whatever width it gets. */
+function pct(slot: number, total: number) {
+  return `${(slot / total) * 100}%`
 }
 </script>
 
@@ -65,10 +76,10 @@ function onEventClick(barId: string, eventId: string) {
     <div
       v-for="(bar, barIndex) in bars"
       :key="bar.id"
-      class="bg-sheet relative grow rounded-lg border transition-colors"
+      class="bg-sheet relative rounded-lg border transition-colors"
       :style="{
-        flexBasis: `calc(${100 / barsPerRow}% - 0.75rem)`,
-        minWidth: 'max(9rem, fit-content)',
+        flexBasis: `calc(${(lay(bar).slots / SLOTS_PER_BAR) * (100 / barsPerRow)}% - 0.75rem)`,
+        minWidth: `${lay(bar).slots * MIN_SLOT_PX}px`,
       }"
       :class="[
         interactive && activeBarId === bar.id ? 'border-primary ring-primary/25 ring-2' : 'border-border',
@@ -76,20 +87,11 @@ function onEventClick(barId: string, eventId: string) {
       ]"
       @click="interactive && emit('selectBar', bar.id)"
     >
-      <!-- Bar number, printed outside the staff like a real sheet -->
-      <span class="text-muted-foreground absolute -top-2 left-2 bg-sheet px-1 text-[10px] font-medium">
+      <span class="text-muted-foreground bg-sheet absolute -top-2 left-2 px-1 text-[10px] font-medium">
         {{ barIndex + 1 }}
       </span>
 
-      <div class="relative px-3 py-2" :style="{ height: `${STAFF_HEIGHT}px` }">
-        <!-- The three string lines -->
-        <div
-          v-for="s in ([1, 2, 3] as StringNumber[])"
-          :key="s"
-          class="bg-sheet-line pointer-events-none absolute right-3 left-3 h-px"
-          :style="{ top: `${LINE_Y[s]}px` }"
-        />
-        <!-- Line labels, so top vs bottom is never ambiguous -->
+      <div class="relative px-2 py-2" :style="{ height: `${STAFF_HEIGHT}px` }">
         <span
           v-for="s in ([1, 2, 3] as StringNumber[])"
           :key="`label-${s}`"
@@ -97,90 +99,111 @@ function onEventClick(barId: string, eventId: string) {
           :style="{ top: `${LINE_Y[s]}px` }"
         >{{ STRING_LABELS[s] }}</span>
 
-        <div class="relative flex h-full items-start gap-1 pl-3">
-          <!-- An empty bar still needs to be clickable and to look intentional -->
-          <p
-            v-if="!bar.events.length"
-            class="text-muted-foreground/70 absolute inset-0 grid place-items-center text-xs"
-          >
-            {{ interactive ? 'empty' : '' }}
-          </p>
+        <!-- The staff itself, one slot-grid wide -->
+        <div class="relative ml-3 h-full">
+          <div
+            v-for="s in ([1, 2, 3] as StringNumber[])"
+            :key="s"
+            class="bg-sheet-line pointer-events-none absolute inset-x-0 h-px"
+            :style="{ top: `${LINE_Y[s]}px` }"
+          />
 
-          <template v-for="(event, i) in bar.events" :key="event.id">
-            <!-- Click between notes to put the caret there -->
+          <!-- Beat 3: the halfway point of the bar -->
+          <div
+            class="bg-sheet-line/60 pointer-events-none absolute w-px"
+            :style="{
+              left: pct(MID_BAR_SLOT, lay(bar).slots),
+              top: `${LINE_Y[1]}px`,
+              height: `${LINE_Y[3] - LINE_Y[1]}px`,
+            }"
+          />
+
+          <template v-for="item in lay(bar).items" :key="item.event.id">
+            <!-- Each event occupies exactly the width of its duration -->
+            <button
+              type="button"
+              :disabled="!interactive"
+              class="absolute top-0 rounded transition-colors"
+              :class="[
+                interactive ? 'hover:bg-primary/10 cursor-pointer' : 'cursor-default',
+                selectedEventId === item.event.id ? 'bg-primary/15 ring-primary ring-1' : '',
+              ]"
+              :style="{
+                left: pct(item.offset, lay(bar).slots),
+                width: pct(item.span, lay(bar).slots),
+                height: `${STAFF_HEIGHT - 16}px`,
+              }"
+              @click.stop="interactive && emit('selectEvent', bar.id, item.event.id)"
+            >
+              <span
+                v-if="isNote(item.event) && item.event.ornament"
+                class="text-primary absolute left-0 text-[11px] leading-none"
+                :style="{ top: `${topY(item.event) - 20}px` }"
+              >{{ ORNAMENT_GLYPHS[item.event.ornament] }}</span>
+
+              <!-- Notes sit at the start of their slot, so the beat lands on them -->
+              <template v-if="isNote(item.event)">
+                <span
+                  v-for="stop in item.event.stops"
+                  :key="stop.string"
+                  class="bg-sheet text-sheet-ink absolute left-0 -translate-y-1/2 px-0.5 font-tab text-[13px] leading-none"
+                  :style="{ top: `${LINE_Y[stop.string]}px` }"
+                >{{ stop.fret }}</span>
+              </template>
+              <span
+                v-else
+                class="bg-sheet text-sheet-ink absolute left-0 -translate-y-1/2 px-0.5 font-tab text-[13px] leading-none"
+                :style="{ top: `${LINE_Y[2]}px` }"
+              >•</span>
+
+              <span
+                v-for="n in item.event.beam"
+                :key="n"
+                class="bg-sheet-ink absolute left-0.5 h-px"
+                :style="{
+                  top: `${bottomY(item.event) + 8 + n * 3}px`,
+                  width: 'calc(100% - 6px)',
+                }"
+              />
+
+              <span
+                v-if="isNote(item.event) && item.event.finger"
+                class="text-muted-foreground absolute left-0.5 text-[9px] leading-none"
+                :style="{ top: `${bottomY(item.event) + 20}px` }"
+              >{{ FINGER_NUMERALS[item.event.finger] }}</span>
+            </button>
+
+            <!-- Caret target on this event's leading edge -->
             <button
               v-if="interactive"
               type="button"
-              class="group/gap relative w-1.5 shrink-0 cursor-pointer"
-              :style="{ height: `${STAFF_HEIGHT - 16}px` }"
-              :aria-label="`Insert at position ${i + 1}`"
-              @click.stop="emit('insertAt', bar.id, i)"
+              class="group/gap absolute top-0 z-10 w-1.5 -translate-x-1/2 cursor-pointer"
+              :style="{
+                left: pct(item.offset, lay(bar).slots),
+                height: `${STAFF_HEIGHT - 16}px`,
+              }"
+              :aria-label="`Insert before position ${item.offset + 1}`"
+              @click.stop="emit('insertAt', bar.id, lay(bar).items.indexOf(item))"
             >
               <span
                 class="absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors"
-                :class="activeBarId === bar.id && insertIndex === i
+                :class="activeBarId === bar.id && insertIndex === lay(bar).items.indexOf(item)
                   ? 'bg-primary'
                   : 'bg-transparent group-hover/gap:bg-primary/40'"
               />
             </button>
-
-          <button
-            type="button"
-            :disabled="!interactive"
-            class="relative shrink-0 rounded transition-colors"
-            :class="[
-              interactive ? 'hover:bg-primary/10 cursor-pointer' : 'cursor-default',
-              selectedEventId === event.id ? 'bg-primary/15 ring-primary ring-1' : '',
-            ]"
-            :style="{ height: `${STAFF_HEIGHT - 16}px`, width: `${widthFor(event)}px` }"
-            @click.stop="onEventClick(bar.id, event.id)"
-          >
-            <!-- Ornament sits above the number, the way it is written by hand -->
-            <span
-              v-if="isNote(event) && event.ornament"
-              class="text-primary absolute left-1/2 -translate-x-1/2 text-[11px] leading-none"
-              :style="{ top: `${topY(event) - 20}px` }"
-            >{{ ORNAMENT_GLYPHS[event.ornament] }}</span>
-
-            <!-- One number per stopped string; several stacked make a chord -->
-            <template v-if="isNote(event)">
-              <span
-                v-for="stop in event.stops"
-                :key="stop.string"
-                class="bg-sheet text-sheet-ink absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-1 font-tab text-sm leading-none"
-                :style="{ top: `${LINE_Y[stop.string]}px` }"
-              >{{ stop.fret }}</span>
-            </template>
-            <span
-              v-else
-              class="bg-sheet text-sheet-ink absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-1 font-tab text-sm leading-none"
-              :style="{ top: `${LINE_Y[2]}px` }"
-            >•</span>
-
-            <!-- Underlines: one for eighths, two for sixteenths -->
-            <span
-              v-for="n in event.beam"
-              :key="n"
-              class="bg-sheet-ink absolute left-1/2 h-px -translate-x-1/2"
-              :style="{ top: `${bottomY(event) + 8 + n * 3}px`, width: `${widthFor(event) - 12}px` }"
-            />
-
-            <!-- Suggested fingering, roman so it can't be misread as a tsubo -->
-            <span
-              v-if="isNote(event) && event.finger"
-              class="text-muted-foreground absolute left-1/2 -translate-x-1/2 text-[9px] leading-none"
-              :style="{ top: `${bottomY(event) + 20}px` }"
-            >{{ FINGER_NUMERALS[event.finger] }}</span>
-          </button>
           </template>
 
-          <!-- Caret position after the last note -->
+          <!-- Caret after the last note -->
           <button
             v-if="interactive && bar.events.length"
             type="button"
-            class="group/gap relative w-1.5 shrink-0 cursor-pointer"
-            :style="{ height: `${STAFF_HEIGHT - 16}px` }"
-            :aria-label="`Insert at the end`"
+            class="group/gap absolute top-0 z-10 w-1.5 -translate-x-1/2 cursor-pointer"
+            :style="{
+              left: pct(lay(bar).used, lay(bar).slots),
+              height: `${STAFF_HEIGHT - 16}px`,
+            }"
+            aria-label="Insert at the end"
             @click.stop="emit('insertAt', bar.id, bar.events.length)"
           >
             <span
@@ -190,6 +213,13 @@ function onEventClick(barId: string, eventId: string) {
                 : 'bg-transparent group-hover/gap:bg-primary/40'"
             />
           </button>
+
+          <p
+            v-if="!bar.events.length"
+            class="text-muted-foreground/70 pointer-events-none absolute inset-0 grid place-items-center text-xs"
+          >
+            {{ interactive ? 'empty' : '' }}
+          </p>
         </div>
       </div>
     </div>

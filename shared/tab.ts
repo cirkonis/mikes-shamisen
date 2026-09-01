@@ -252,10 +252,38 @@ export const FINGER_NUMERALS: Record<Finger, string> = {
 }
 
 /**
- * Horizontal room a note takes up. Shorter notes sit closer together, so the
- * spacing itself carries the rhythm the way it does on a real sheet.
+ * Rhythm is spacing. A 4/4 bar is divided into sixteenth-note slots and each
+ * event claims as many as it lasts, so a bar's horizontal layout matches how it
+ * is actually counted rather than just listing the notes in order.
  */
-export const EVENT_WIDTH: Record<0 | 1 | 2, number> = { 0: 36, 1: 26, 2: 20 }
+export const SLOTS_PER_BAR = 16
+
+/** Bare note = quarter = 4 slots; one underline = eighth = 2; two = sixteenth = 1. */
+export const SLOTS_PER_BEAM: Record<0 | 1 | 2, number> = { 0: 4, 1: 2, 2: 1 }
+
+/** The slot a mid-bar line sits on — the start of beat 3. */
+export const MID_BAR_SLOT = SLOTS_PER_BAR / 2
+
+export function slotsFor(event: TabEvent) {
+  return SLOTS_PER_BEAM[event.beam]
+}
+
+/**
+ * Where each event starts, and how wide the bar has to be.
+ *
+ * An over-full bar is laid out at its true length rather than squeezed back
+ * into 16 slots — the tab is a record of what you play, not a validator.
+ */
+export function layOutBar(bar: Bar) {
+  let offset = 0
+  const items = bar.events.map((event) => {
+    const span = slotsFor(event)
+    const item = { event, offset, span }
+    offset += span
+    return item
+  })
+  return { items, slots: Math.max(SLOTS_PER_BAR, offset), used: offset }
+}
 
 export function newRest(): RestEvent {
   return { id: newId(), kind: 'rest', beam: 0 }

@@ -120,6 +120,34 @@ export function emptyTabContent(): TabContent {
   return { bars: [{ id: newId(), events: [] }] }
 }
 
+/** Line labels, top to bottom: ichi/ni/san no ito. */
+export const STRING_LABELS: Record<StringNumber, string> = {
+  1: '\u4e00',
+  2: '\u4e8c',
+  3: '\u4e09',
+}
+
+/** Marks drawn beside a note. Kana match what a player writes by hand. */
+export const ORNAMENT_GLYPHS: Record<Ornament, string> = {
+  'slide-up': '\u2197',
+  'slide-down': '\u2198',
+  'hajiki': '\u30cf',
+  'uchi': '\u30a6',
+  'tie': '\u2040',
+}
+
+export function newNote(string: StringNumber, fret: number): NoteEvent {
+  return { id: newId(), kind: 'note', string, fret, beam: 0, ornament: null }
+}
+
+export function newRest(): RestEvent {
+  return { id: newId(), kind: 'rest', beam: 0 }
+}
+
+export function newBar(): Bar {
+  return { id: newId(), events: [] }
+}
+
 /** Short, collision-safe enough for ids inside a single document. */
 export function newId() {
   return Math.random().toString(36).slice(2, 10)

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { useDb } from '~~/server/db'
+import { describeDatabaseEnv } from '~~/server/db/resolve-url'
 
 /**
  * Config diagnostic for "works locally, fails on Vercel" problems.
@@ -14,9 +15,7 @@ export default defineEventHandler(async (event) => {
   const present = (name: string) => Boolean(process.env[name]?.length)
 
   const env = {
-    POSTGRES_URL: present('POSTGRES_URL'),
-    POSTGRES_URL_NON_POOLING: present('POSTGRES_URL_NON_POOLING'),
-    DATABASE_URL: present('DATABASE_URL'),
+    ...describeDatabaseEnv(),
     NUXT_SESSION_PASSWORD: present('NUXT_SESSION_PASSWORD'),
     NUXT_APP_PASSWORD: present('NUXT_APP_PASSWORD'),
   }

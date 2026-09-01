@@ -7,10 +7,14 @@ for (const file of ['.env.local', '.env']) {
   if (existsSync(file)) process.loadEnvFile(file)
 }
 
+// Prefer a direct (non-pooled) connection for migrations; fall back through the
+// alias names the Neon integration may have used.
 const url =
-  process.env.POSTGRES_URL_NON_POOLING ??
-  process.env.POSTGRES_URL ??
-  ''
+  process.env.POSTGRES_URL_NON_POOLING
+  || process.env.DATABASE_URL_UNPOOLED
+  || process.env.POSTGRES_URL
+  || process.env.DATABASE_URL
+  || ''
 
 export default defineConfig({
   schema: './server/db/schema.ts',

@@ -21,8 +21,18 @@ async function onSubmit() {
     await refreshSession()
     const redirect = (route.query.redirect as string | undefined) || '/'
     await navigateTo(redirect)
-  } catch {
-    error.value = 'Incorrect password'
+  } catch (e: unknown) {
+    // Only a 401 actually means the password was wrong. Anything else is a
+    // misconfigured server (most often NUXT_SESSION_PASSWORD under 32 chars),
+    // and reporting that as "incorrect password" sends you hunting the wrong bug.
+    const err = e as { statusCode?: number, data?: { message?: string } }
+    if (err.statusCode === 401) {
+      error.value = 'Incorrect password'
+    } else {
+      error.value = err.data?.message
+        ? `Sign-in is misconfigured: ${err.data.message}`
+        : 'Sign-in is misconfigured — check the server env vars.'
+    }
     password.value = ''
   } finally {
     loading.value = false

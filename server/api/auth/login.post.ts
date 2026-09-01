@@ -13,6 +13,22 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'NUXT_APP_PASSWORD is not configured',
+      message: 'NUXT_APP_PASSWORD is not configured',
+    })
+  }
+
+  // iron (used to seal the session cookie) hard-requires 32+ characters. Check it
+  // here so the failure names the actual problem instead of surfacing as a generic
+  // 500 from deep inside the seal call, after the password already checked out.
+  const sessionPassword = process.env.NUXT_SESSION_PASSWORD ?? ''
+  if (sessionPassword.length < 32) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'NUXT_SESSION_PASSWORD is too short',
+      message:
+        'NUXT_SESSION_PASSWORD must be at least 32 characters. It is the key that '
+        + 'encrypts the session cookie — not the password you type in. Generate one '
+        + 'with: openssl rand -base64 32',
     })
   }
 

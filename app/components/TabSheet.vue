@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Bar, StringNumber, TabEvent } from '#shared/tab'
 import {
-  ACCIDENTAL_GLYPHS, FINGER_NUMERALS, MID_BAR_SLOT, ORNAMENT_GLYPHS,
-  SLOTS_PER_BAR, STRING_LABELS, layOutBar,
+  ACCIDENTAL_GLYPHS, FINGER_NUMERALS, ORNAMENT_GLYPHS, STRING_LABELS,
+  layOutBar, midBarSlot, slotsPerBar,
 } from '#shared/tab'
 
 const props = withDefaults(defineProps<{
@@ -15,6 +15,8 @@ const props = withDefaults(defineProps<{
   insertIndex?: number | null
   /** Bars per line. */
   barsPerRow?: number
+  /** Quarter-note beats in a bar — 4 for 4/4, 2 for 2/4. */
+  beatsPerBar?: number
   /** The note currently sounding during playback. */
   playingEventId?: string | null
   interactive?: boolean
@@ -23,6 +25,7 @@ const props = withDefaults(defineProps<{
   activeBarId: null,
   insertIndex: null,
   barsPerRow: 4,
+  beatsPerBar: 4,
   playingEventId: null,
   interactive: false,
 })
@@ -79,7 +82,7 @@ function bottomY(e: TabEvent) {
 /** One layout pass per bar, rather than recomputing it per mark in the template. */
 const layouts = computed(() => {
   const map = new Map<string, ReturnType<typeof layOutBar>>()
-  for (const bar of props.bars) map.set(bar.id, layOutBar(bar))
+  for (const bar of props.bars) map.set(bar.id, layOutBar(bar, props.beatsPerBar))
   return map
 })
 
@@ -100,7 +103,7 @@ function pct(slot: number, total: number) {
       :key="bar.id"
       class="bg-sheet relative rounded-lg border transition-colors"
       :style="{
-        flexBasis: `calc(${(lay(bar).slots / SLOTS_PER_BAR) * (100 / barsPerRow)}% - 0.75rem)`,
+        flexBasis: `calc(${(lay(bar).slots / slotsPerBar(beatsPerBar)) * (100 / barsPerRow)}% - 0.75rem)`,
         minWidth: `${lay(bar).slots * MIN_SLOT_PX}px`,
       }"
       :class="[
@@ -134,7 +137,7 @@ function pct(slot: number, total: number) {
           <div
             class="bg-sheet-line/60 pointer-events-none absolute w-px"
             :style="{
-              left: pct(MID_BAR_SLOT, lay(bar).slots),
+              left: pct(midBarSlot(beatsPerBar), lay(bar).slots),
               top: `${TOP_LINE}px`,
               height: `${BOTTOM_LINE - TOP_LINE}px`,
             }"

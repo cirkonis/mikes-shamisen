@@ -292,6 +292,19 @@ function setOrnament(value: string) {
         :tuning="tab.tuning"
       />
       <div class="flex items-center gap-2">
+        <Label for="beats" class="text-muted-foreground text-xs">Bar length</Label>
+        <select
+          id="beats"
+          v-model.number="content.beatsPerBar"
+          class="border-input h-8 rounded-md border bg-transparent px-2 text-sm"
+        >
+          <option :value="2">2/4</option>
+          <option :value="3">3/4</option>
+          <option :value="4">4/4</option>
+          <option :value="6">6/4</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
       <Label for="per-row" class="text-muted-foreground text-xs">Bars per row</Label>
       <select
         id="per-row"
@@ -310,6 +323,7 @@ function setOrnament(value: string) {
       :selected-event-id="selectedEventId"
       :insert-index="insertIndex"
       :bars-per-row="content.barsPerRow"
+      :beats-per-bar="content.beatsPerBar"
       :playing-event-id="playingEventId"
       interactive
       class="mb-4"

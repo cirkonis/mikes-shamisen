@@ -115,6 +115,11 @@ export const tabContentSchema = z.object({
   /** How many bars sit on one line. Defaults to 4, the usual phrase length. */
   barsPerRow: z.number().int().min(1).max(8).default(4),
   /**
+   * Quarter-note beats in a bar — 4 for 4/4, 2 for 2/4. Not a full time
+   * signature, just enough to make a bar the right length.
+   */
+  beatsPerBar: z.number().int().min(1).max(12).default(4),
+  /**
    * What the first string is actually tuned to, as a semitone index into
    * NOTE_NAMES. The tuning only fixes the intervals, so this is what turns the
    * tsubo numbers into real pitches. Defaults to B.
@@ -246,7 +251,12 @@ export function getTuning(id: string) {
 
 /** Fresh empty content for a brand-new tab: one bar, waiting for notes. */
 export function emptyTabContent(): TabContent {
-  return { bars: [{ id: newId(), events: [] }], barsPerRow: 4, baseSemitone: BASE_SEMITONE }
+  return {
+    bars: [{ id: newId(), events: [] }],
+    barsPerRow: 4,
+    beatsPerBar: 4,
+    baseSemitone: BASE_SEMITONE,
+  }
 }
 
 /** Line labels, top to bottom: ichi/ni/san no ito. */
@@ -308,17 +318,26 @@ export const FINGER_NUMERALS: Record<Finger, string> = {
 }
 
 /**
- * Rhythm is spacing. A 4/4 bar is divided into sixteenth-note slots and each
- * event claims as many as it lasts, so a bar's horizontal layout matches how it
- * is actually counted rather than just listing the notes in order.
+ * Rhythm is spacing. A bar is divided into sixteenth-note slots and each event
+ * claims as many as it lasts, so a bar's horizontal layout matches how it is
+ * actually counted rather than just listing the notes in order.
  */
-export const SLOTS_PER_BAR = 16
+export const SLOTS_PER_BEAT = 4
+
+/** A 4/4 bar. Tabs in another metre carry their own beatsPerBar. */
+export const SLOTS_PER_BAR = SLOTS_PER_BEAT * 4
+
+export function slotsPerBar(beatsPerBar = 4) {
+  return beatsPerBar * SLOTS_PER_BEAT
+}
 
 /** Bare note = quarter = 4 slots; one underline = eighth = 2; two = sixteenth = 1. */
 export const SLOTS_PER_BEAM: Record<0 | 1 | 2, number> = { 0: 4, 1: 2, 2: 1 }
 
-/** The slot a mid-bar line sits on — the start of beat 3. */
-export const MID_BAR_SLOT = SLOTS_PER_BAR / 2
+/** The slot the mid-bar line sits on — beat 3 in 4/4, the halfway point always. */
+export function midBarSlot(beatsPerBar = 4) {
+  return slotsPerBar(beatsPerBar) / 2
+}
 
 export function slotsFor(event: TabEvent) {
   return SLOTS_PER_BEAM[event.beam]
@@ -330,7 +349,7 @@ export function slotsFor(event: TabEvent) {
  * An over-full bar is laid out at its true length rather than squeezed back
  * into 16 slots — the tab is a record of what you play, not a validator.
  */
-export function layOutBar(bar: Bar) {
+export function layOutBar(bar: Bar, beatsPerBar = 4) {
   let offset = 0
   const items = bar.events.map((event) => {
     const span = slotsFor(event)
@@ -338,7 +357,11 @@ export function layOutBar(bar: Bar) {
     offset += span
     return item
   })
-  return { items, slots: Math.max(SLOTS_PER_BAR, offset), used: offset }
+  return {
+    items,
+    slots: Math.max(slotsPerBar(beatsPerBar), offset),
+    used: offset,
+  }
 }
 
 export function newRest(): RestEvent {
@@ -380,7 +403,7 @@ export function buildSchedule(
   let barStart = 0
 
   for (const bar of content.bars) {
-    const { items, slots } = layOutBar(bar)
+    const { items, slots } = layOutBar(bar, content.beatsPerBar)
     for (const { event, offset, span } of items) {
       if (event.kind !== 'note') continue
       const frequencies = event.stops

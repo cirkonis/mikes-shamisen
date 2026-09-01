@@ -44,6 +44,7 @@ const strings = computed(() =>
     <TabSheet
       :bars="content.bars"
       :bars-per-row="content.barsPerRow"
+      :beats-per-bar="content.beatsPerBar"
       :playing-event-id="playingEventId"
     />
 

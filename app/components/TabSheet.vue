@@ -40,6 +40,13 @@ const emit = defineEmits<{
  * lines run low-to-high upward, the opposite of how they are numbered.
  */
 const LINE_Y: Record<StringNumber, number> = { 1: 72, 2: 48, 3: 24 }
+
+/**
+ * Derived rather than written out, so anything spanning the staff keeps working
+ * if the line order is ever flipped again — the beat line broke exactly this way.
+ */
+const TOP_LINE = Math.min(...Object.values(LINE_Y))
+const BOTTOM_LINE = Math.max(...Object.values(LINE_Y))
 const STAFF_HEIGHT = 112
 
 /** Enough room for a two-digit tsubo in a single sixteenth slot. */
@@ -128,8 +135,8 @@ function pct(slot: number, total: number) {
             class="bg-sheet-line/60 pointer-events-none absolute w-px"
             :style="{
               left: pct(MID_BAR_SLOT, lay(bar).slots),
-              top: `${LINE_Y[1]}px`,
-              height: `${LINE_Y[3] - LINE_Y[1]}px`,
+              top: `${TOP_LINE}px`,
+              height: `${BOTTOM_LINE - TOP_LINE}px`,
             }"
           />
 

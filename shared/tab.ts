@@ -43,16 +43,31 @@ export const ORNAMENT_LABELS: Record<Ornament, string> = {
 }
 
 /** One stopped string. A note holds one of these, a chord holds two or three. */
-export const stopSchema = z.object({
+export const ACCIDENTALS = ['sharp', 'flat'] as const
+export type Accidental = (typeof ACCIDENTALS)[number]
+
+export const ACCIDENTAL_GLYPHS: Record<Accidental, string> = {
+  sharp: '\u266f',
+  flat: '\u266d',
+}
+
+/**
+ * The unnumbered positions. Where the tsubo numbering jumps a whole tone the
+ * note in between has no number, and the neck marks it either as a sharp above
+ * the lower tsubo or a flat below the upper one — both spellings occur, so
+ * store whichever matches what is written.
+ */
+export const stopSchema = z.preprocess((value) => {
+  if (!value || typeof value !== 'object') return value
+  const stop = value as Record<string, unknown>
+  if (stop.accidental !== undefined || stop.sharp === undefined) return value
+  const { sharp, ...rest } = stop
+  return { ...rest, accidental: sharp ? 'sharp' : null }
+}, z.object({
   string: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   fret: z.number().int().min(0).max(MAX_FRET),
-  /**
-   * A semitone above the numbered tsubo. Needed because the tsubo numbering is
-   * not chromatic — some neighbours are a whole tone apart, so the note between
-   * them has no number of its own and is written as a sharp.
-   */
-  sharp: z.boolean().default(false),
-})
+  accidental: z.enum(ACCIDENTALS).nullable().default(null),
+}))
 
 export const eventUnion = z.discriminatedUnion('kind', [
   z.object({
@@ -84,7 +99,7 @@ function widenLegacyEvent(value: unknown) {
   const e = value as Record<string, unknown>
   if (e.kind !== 'note' || e.stops !== undefined || e.string === undefined) return value
   const { string, fret, ...rest } = e
-  return { ...rest, stops: [{ string, fret, sharp: false }] }
+  return { ...rest, stops: [{ string, fret, accidental: null }] }
 }
 
 export const tabEventSchema = z.preprocess(widenLegacyEvent, eventUnion)
@@ -153,14 +168,27 @@ export const NOTE_NAMES = [
 export const BASE_SEMITONE = 11
 
 /**
- * Semitones above the open string for a given tsubo number.
+ * Semitones above the open string for tsubo 0-9, read off the markers on the
+ * neck: numbered positions are consecutive semitones except 3->4 and 9->10,
+ * which are whole tones with an unnumbered accidental marker sitting between.
  *
- * ASSUMPTION: bunkafu numbers are treated as chromatic positions, so 12 is the
- * octave. Charts do vary between schools — if yours disagrees, this single
- * function is the only place that needs changing.
+ * The two semitones the numbering skips are 4 and 11 — exactly the positions
+ * marked with an accidental rather than a number.
+ */
+const TSUBO_BLOCK = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10] as const
+
+/** Tsubo per octave: position 10 is exactly an octave above the open string. */
+export const TSUBO_PER_OCTAVE = 10
+
+/**
+ * Semitones above the open string for a given tsubo.
+ *
+ * The pattern repeats every octave, so 13->14 is a whole tone just as 3->4 is,
+ * which is why the neck carries a second accidental marker up there.
  */
 export function semitonesForTsubo(fret: number) {
-  return fret
+  const octave = Math.floor(fret / TSUBO_PER_OCTAVE)
+  return TSUBO_BLOCK[fret % TSUBO_PER_OCTAVE]! + 12 * octave
 }
 
 export function noteName(semitonesFromC: number) {
@@ -241,7 +269,7 @@ export function newNote(string: StringNumber, fret: number): NoteEvent {
   return {
     id: newId(),
     kind: 'note',
-    stops: [{ string, fret, sharp: false }],
+    stops: [{ string, fret, accidental: null }],
     beam: 0,
     ornament: null,
     finger: null,
@@ -358,7 +386,8 @@ export function buildSchedule(
       const frequencies = event.stops
         .map((st) => {
           const midi = midiAt(tuningId, st.string, st.fret, content.baseSemitone)
-          return midi === null ? null : midi + (st.sharp ? 1 : 0)
+          if (midi === null) return null
+          return midi + (st.accidental === 'sharp' ? 1 : st.accidental === 'flat' ? -1 : 0)
         })
         .filter((midi): midi is number => midi !== null)
         .map(frequencyOf)

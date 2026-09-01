@@ -115,10 +115,11 @@ const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i)
       </div>
 
       <p class="text-muted-foreground mt-3 text-xs">
-        Worth checking against your own chart: this treats the bunkafu numbers as
-        chromatic positions, so 12 is the octave. Schools differ. If yours does,
-        <code>semitonesForTsubo()</code> in <code>shared/tab.ts</code> is the only
-        thing that needs changing.
+        Read off the markers on your own neck: numbered tsubo are consecutive
+        semitones except 3→4 and 9→10, which are whole tones with an unnumbered
+        position between them. That puts <strong>tsubo 10 exactly an octave</strong>
+        above the open string, and the pattern repeats from there — which is why
+        13→14 has a marker too.
       </p>
     </section>
 
@@ -139,6 +140,21 @@ const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i)
         <div class="rounded-lg border p-3">
           <dt class="font-medium">A dot •</dt>
           <dd class="text-muted-foreground text-sm">A rest — nothing is played.</dd>
+        </div>
+        <div class="rounded-lg border p-3">
+          <dt class="font-medium">♯ or ♭ beside a number</dt>
+          <dd class="text-muted-foreground text-sm">
+            The unnumbered position in a whole-tone gap. The neck marks it as a
+            sharp above the lower tsubo or a flat below the upper one — 3♯ and 4♭
+            are the same place.
+          </dd>
+        </div>
+        <div class="rounded-lg border p-3">
+          <dt class="font-medium">Which line is which string</dt>
+          <dd class="text-muted-foreground text-sm">
+            The thick first string is the bottom line; the thin third string is the
+            top. The lines run low to high going up, opposite to the numbering.
+          </dd>
         </div>
         <div class="rounded-lg border p-3">
           <dt class="font-medium">One underline</dt>

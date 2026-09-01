@@ -5,9 +5,9 @@ import type { Bar, StringNumber, TabContent, TabEvent } from '#shared/tab'
 import {
   BASE_SEMITONE, FINGERS, FINGER_NUMERALS, MAX_FRET, NOTE_NAMES, ORNAMENTS,
   ORNAMENT_LABELS, STRING_LABELS, TUNINGS, newBar, newNote, newRest,
-  openStrings, parseContent,
+  ACCIDENTALS, ACCIDENTAL_GLYPHS, openStrings, parseContent,
 } from '#shared/tab'
-import type { Finger } from '#shared/tab'
+import type { Accidental, Finger } from '#shared/tab'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -50,7 +50,8 @@ const selected = computed(() => {
 
 /** The fret buttons. Bunkafu positions run 0 upward. */
 const frets = Array.from({ length: MAX_FRET + 1 }, (_, i) => i)
-const strings: StringNumber[] = [1, 2, 3]
+/** Listed the way they are drawn: third string on top, first at the bottom. */
+const strings: StringNumber[] = [3, 2, 1]
 
 async function save() {
   if (!tab.value) return
@@ -185,13 +186,21 @@ function toggleStop(string: StringNumber) {
     event.stops.splice(at, 1)
     return
   }
-  event.stops.push({ string, fret: 0, sharp: false })
+  event.stops.push({ string, fret: 0, accidental: null })
   event.stops.sort((a, b) => a.string - b.string)
 }
 
 function setStopFret(string: StringNumber, value: number) {
   const stop = stopFor(string)
   if (stop) stop.fret = Math.min(MAX_FRET, Math.max(0, Math.round(value || 0)))
+}
+
+/** Cycles none -> sharp -> flat, since the neck marks the same pitch either way. */
+function cycleAccidental(string: StringNumber) {
+  const stop = stopFor(string)
+  if (!stop) return
+  const next: (Accidental | null)[] = [null, ...ACCIDENTALS]
+  stop.accidental = next[(next.indexOf(stop.accidental) + 1) % next.length]!
 }
 
 /** Clicking the finger already set clears it — no separate "none" button. */
@@ -392,13 +401,13 @@ function setOrnament(value: string) {
                 <button
                   v-if="stopFor(s)"
                   type="button"
-                  title="Sharp — a semitone above this tsubo"
+                  title="The unnumbered position between two tsubo"
                   class="h-8 w-8 cursor-pointer rounded border text-xs"
-                  :class="stopFor(s)!.sharp
+                  :class="stopFor(s)!.accidental
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border'"
-                  @click="stopFor(s)!.sharp = !stopFor(s)!.sharp"
-                >♯</button>
+                  @click="cycleAccidental(s)"
+                >{{ stopFor(s)!.accidental ? ACCIDENTAL_GLYPHS[stopFor(s)!.accidental!] : '♯' }}</button>
               </div>
             </div>
           </div>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Bar, StringNumber, TabEvent } from '#shared/tab'
 import {
-  FINGER_NUMERALS, MID_BAR_SLOT, ORNAMENT_GLYPHS, SLOTS_PER_BAR, STRING_LABELS,
-  layOutBar,
+  ACCIDENTAL_GLYPHS, FINGER_NUMERALS, MID_BAR_SLOT, ORNAMENT_GLYPHS,
+  SLOTS_PER_BAR, STRING_LABELS, layOutBar,
 } from '#shared/tab'
 
 const props = withDefaults(defineProps<{
@@ -33,8 +33,13 @@ const emit = defineEmits<{
   insertAt: [barId: string, index: number]
 }>()
 
-/** Vertical position of each string's line, in px from the top of a bar. */
-const LINE_Y: Record<StringNumber, number> = { 1: 24, 2: 48, 3: 72 }
+/**
+ * Vertical position of each string's line, in px from the top of a bar.
+ *
+ * The thick first string is the BOTTOM line, as it is written in bunkafu — the
+ * lines run low-to-high upward, the opposite of how they are numbered.
+ */
+const LINE_Y: Record<StringNumber, number> = { 1: 72, 2: 48, 3: 24 }
 const STAFF_HEIGHT = 112
 
 /** Enough room for a two-digit tsubo in a single sixteenth slot. */
@@ -160,9 +165,9 @@ function pct(slot: number, total: number) {
                   class="bg-sheet text-sheet-ink absolute left-0 -translate-y-1/2 px-0.5 font-tab text-[13px] leading-none"
                   :style="{ top: `${LINE_Y[stop.string]}px` }"
                 >{{ stop.fret }}<span
-                  v-if="stop.sharp"
+                  v-if="stop.accidental"
                   class="text-primary align-super text-[9px] leading-none"
-                >♯</span></span>
+                >{{ ACCIDENTAL_GLYPHS[stop.accidental] }}</span></span>
               </template>
               <span
                 v-else

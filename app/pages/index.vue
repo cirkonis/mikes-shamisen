@@ -9,6 +9,17 @@ const { clear: clearSession } = useUserSession()
 
 const { data: tabs, error, refresh } = await useFetch('/api/tabs')
 
+// A FetchError's own `message` is just `[GET] "/api/tabs": 500` — the reason the
+// server actually gave is nested under `data`. Reading the wrong one turns every
+// backend failure into the same useless string.
+const serverReason = computed(() => {
+  const e = error.value as { data?: { statusMessage?: string, message?: string }, message?: string } | null
+  return e?.data?.statusMessage
+    ?? e?.data?.message
+    ?? e?.message
+    ?? 'Unknown error'
+})
+
 const creating = ref(false)
 
 async function createTab() {
@@ -54,8 +65,7 @@ async function signOut() {
       <CardHeader>
         <CardTitle>Can't reach the database</CardTitle>
         <CardDescription>
-          {{ error.statusMessage || error.message }} — set <code>POSTGRES_URL</code> in
-          <code>.env</code> and run <code>npm run db:push</code>.
+          {{ serverReason }}
         </CardDescription>
       </CardHeader>
       <CardContent>

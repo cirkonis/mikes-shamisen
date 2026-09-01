@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Pencil } from 'lucide-vue-next'
-import { getTuning } from '#shared/tab'
+import { getTuning, openStrings } from '#shared/tab'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -9,6 +9,7 @@ const { data: tab } = await useFetch(`/api/tabs/${id}`)
 useHead({ title: () => tab.value?.title ?? 'Tab' })
 
 const tuning = computed(() => getTuning(tab.value?.tuning ?? ''))
+const strings = computed(() => openStrings(tab.value?.tuning ?? ''))
 </script>
 
 <template>
@@ -26,7 +27,7 @@ const tuning = computed(() => getTuning(tab.value?.tuning ?? ''))
       <h1 class="text-3xl font-semibold tracking-tight">{{ tab.title }}</h1>
       <p v-if="tab.artist" class="text-muted-foreground mt-1">{{ tab.artist }}</p>
       <p v-if="tuning" class="text-muted-foreground mt-2 text-sm">
-        {{ tuning.kanji }} {{ tuning.name }} · {{ tuning.intervals }} · {{ tuning.pitches.join(' – ') }}
+        {{ tuning.kanji }} {{ tuning.name }} · {{ tuning.intervals }} · {{ strings.join(' – ') }}
       </p>
     </header>
 

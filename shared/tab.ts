@@ -76,36 +76,77 @@ export type Bar = z.infer<typeof barSchema>
 export type TabContent = z.infer<typeof tabContentSchema>
 
 /**
- * The three standard tunings. `intervals` is what actually matters — the
- * absolute pitches vary with the singer, so `pitches` is only a common
- * reference spelling.
+ * The three standard tunings, as semitone offsets of each string above the
+ * first. The absolute pitch varies with the singer, so only the intervals are
+ * fixed — `BASE_SEMITONE` just picks a common spelling to show note names in.
  */
 export const TUNINGS = [
   {
     id: 'honchoshi',
     name: 'Honchoshi',
-    kanji: '本調子',
-    intervals: '1 – 4 – 8',
-    pitches: ['B', 'E', 'B'],
+    kanji: '\u672c\u8abf\u5b50',
+    intervals: '1 \u2013 4 \u2013 8',
+    semitones: [0, 5, 12],
     description: 'The default. Third string an octave above the first.',
   },
   {
     id: 'niagari',
     name: 'Niagari',
-    kanji: '二上り',
-    intervals: '1 – 5 – 8',
-    pitches: ['B', 'F#', 'B'],
+    kanji: '\u4e8c\u4e0a\u308a',
+    intervals: '1 \u2013 5 \u2013 8',
+    semitones: [0, 7, 12],
     description: 'Second string raised a tone. Bright, used for lively pieces.',
   },
   {
     id: 'sansagari',
     name: 'Sansagari',
-    kanji: '三下り',
-    intervals: '1 – 4 – ♭7',
-    pitches: ['B', 'E', 'A'],
+    kanji: '\u4e09\u4e0b\u304c\u308a',
+    intervals: '1 \u2013 4 \u2013 \u266d7',
+    semitones: [0, 5, 10],
     description: 'Third string lowered a tone. Softer, more melancholy.',
   },
 ] as const
+
+export const NOTE_NAMES = [
+  'C', 'C\u266f', 'D', 'D\u266f', 'E', 'F', 'F\u266f', 'G', 'G\u266f', 'A', 'A\u266f', 'B',
+] as const
+
+/** B — the usual reference spelling for the first string. */
+export const BASE_SEMITONE = 11
+
+/**
+ * Semitones above the open string for a given tsubo number.
+ *
+ * ASSUMPTION: bunkafu numbers are treated as chromatic positions, so 12 is the
+ * octave. Charts do vary between schools — if yours disagrees, this single
+ * function is the only place that needs changing.
+ */
+export function semitonesForTsubo(fret: number) {
+  return fret
+}
+
+export function noteName(semitonesFromC: number) {
+  return NOTE_NAMES[((semitonesFromC % 12) + 12) % 12]
+}
+
+/** Note names of the three open strings, low to high. */
+export function openStrings(tuningId: string, base = BASE_SEMITONE) {
+  const tuning = getTuning(tuningId)
+  if (!tuning) return []
+  return tuning.semitones.map((s) => noteName(base + s))
+}
+
+/** The note a given string and tsubo sounds in a given tuning. */
+export function pitchAt(
+  tuningId: string,
+  string: StringNumber,
+  fret: number,
+  base = BASE_SEMITONE,
+) {
+  const tuning = getTuning(tuningId)
+  if (!tuning) return ''
+  return noteName(base + tuning.semitones[string - 1]! + semitonesForTsubo(fret))
+}
 
 export type TuningId = (typeof TUNINGS)[number]['id']
 

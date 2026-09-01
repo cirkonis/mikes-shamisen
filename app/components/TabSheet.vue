@@ -6,18 +6,22 @@ const props = withDefaults(defineProps<{
   bars: Bar[]
   /** Which event is currently being edited, if any. */
   selectedEventId?: string | null
-  /** Which bar new events get appended to. */
+  /** Which bar new events get added to. */
   activeBarId?: string | null
+  /** Where in the active bar the next event lands. */
+  insertIndex?: number | null
   interactive?: boolean
 }>(), {
   selectedEventId: null,
   activeBarId: null,
+  insertIndex: null,
   interactive: false,
 })
 
 const emit = defineEmits<{
   selectBar: [barId: string]
   selectEvent: [barId: string, eventId: string]
+  insertAt: [barId: string, index: number]
 }>()
 
 /** Vertical position of each string's line, in px from the top of a bar. */
@@ -81,9 +85,25 @@ function onEventClick(barId: string, eventId: string) {
             {{ interactive ? 'empty' : '' }}
           </p>
 
+          <template v-for="(event, i) in bar.events" :key="event.id">
+            <!-- Click between notes to put the caret there -->
+            <button
+              v-if="interactive"
+              type="button"
+              class="group/gap relative w-2 shrink-0 cursor-pointer"
+              :style="{ height: `${STAFF_HEIGHT - 16}px` }"
+              :aria-label="`Insert at position ${i + 1}`"
+              @click.stop="emit('insertAt', bar.id, i)"
+            >
+              <span
+                class="absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors"
+                :class="activeBarId === bar.id && insertIndex === i
+                  ? 'bg-primary'
+                  : 'bg-transparent group-hover/gap:bg-primary/40'"
+              />
+            </button>
+
           <button
-            v-for="event in bar.events"
-            :key="event.id"
             type="button"
             :disabled="!interactive"
             class="relative w-8 shrink-0 rounded transition-colors"
@@ -113,6 +133,24 @@ function onEventClick(barId: string, eventId: string) {
               :key="n"
               class="bg-sheet-ink absolute left-1/2 h-px w-4 -translate-x-1/2"
               :style="{ top: `${yFor(event) + 8 + n * 3}px` }"
+            />
+          </button>
+          </template>
+
+          <!-- Caret position after the last note -->
+          <button
+            v-if="interactive && bar.events.length"
+            type="button"
+            class="group/gap relative w-2 shrink-0 cursor-pointer"
+            :style="{ height: `${STAFF_HEIGHT - 16}px` }"
+            :aria-label="`Insert at the end`"
+            @click.stop="emit('insertAt', bar.id, bar.events.length)"
+          >
+            <span
+              class="absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors"
+              :class="activeBarId === bar.id && insertIndex === bar.events.length
+                ? 'bg-primary'
+                : 'bg-transparent group-hover/gap:bg-primary/40'"
             />
           </button>
         </div>

@@ -16,6 +16,8 @@ useHead({ title: () => tab.value?.title ?? 'Tab' })
 const content = ref<TabContent>(tab.value?.content ?? { bars: [] })
 const activeBarId = ref<string | null>(content.value.bars.at(-1)?.id ?? null)
 const selectedEventId = ref<string | null>(null)
+/** Where the next added event lands. null = append to the end of the bar. */
+const insertIndex = ref<number | null>(null)
 
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -62,13 +64,56 @@ function addBar() {
   content.value.bars.push(bar)
   activeBarId.value = bar.id
   selectedEventId.value = null
+  insertIndex.value = null
 }
+
+/** Selecting a note puts the caret just after it — the usual next edit. */
+function selectEvent(barId: string, eventId: string) {
+  activeBarId.value = barId
+  selectedEventId.value = eventId
+  const bar = content.value.bars.find((b) => b.id === barId)
+  const i = bar?.events.findIndex((e) => e.id === eventId) ?? -1
+  insertIndex.value = i >= 0 ? i + 1 : null
+}
+
+function selectBar(barId: string) {
+  activeBarId.value = barId
+  selectedEventId.value = null
+  insertIndex.value = null
+}
+
+/**
+ * Two-step inline confirm rather than window.confirm(): a native dialog is
+ * suppressed outright in some embedded browsers, which would turn "delete" into
+ * a button that silently does nothing.
+ */
+const confirmingDelete = ref(false)
+let confirmTimer: ReturnType<typeof setTimeout> | undefined
+
+async function deleteTab() {
+  if (!confirmingDelete.value) {
+    confirmingDelete.value = true
+    clearTimeout(confirmTimer)
+    confirmTimer = setTimeout(() => (confirmingDelete.value = false), 4000)
+    return
+  }
+  clearTimeout(confirmTimer)
+  await $fetch(`/api/tabs/${id}`, { method: 'DELETE' })
+  await navigateTo('/')
+}
+
+onBeforeUnmount(() => clearTimeout(confirmTimer))
 
 function addEvent(event: TabEvent) {
   // Adding with nothing selected is common enough that silently creating the
   // first bar beats making you click "Add bar" before you can write anything.
   if (!activeBar.value) addBar()
-  activeBar.value!.events.push(event)
+  const events = activeBar.value!.events
+  const at = insertIndex.value ?? events.length
+  events.splice(at, 0, event)
+  // Advance the caret so a run of notes goes in reading order rather than
+  // stacking up backwards at the insertion point.
+  insertIndex.value = at + 1
   selectedEventId.value = event.id
 }
 
@@ -79,7 +124,10 @@ function addNote(string: StringNumber, fret: number) {
 function deleteSelected() {
   const found = selected.value
   if (!found) return
-  found.bar.events = found.bar.events.filter((e) => e.id !== found.event.id)
+  const at = found.bar.events.findIndex((e) => e.id === found.event.id)
+  found.bar.events.splice(at, 1)
+  // Leave the caret where the note was, so retyping it is one click.
+  insertIndex.value = at
   selectedEventId.value = null
 }
 
@@ -116,6 +164,14 @@ function setOrnament(value: string) {
         <NuxtLink :to="`/tabs/${id}/view`">
           <Button variant="outline" size="sm"><Eye /> View</Button>
         </NuxtLink>
+        <Button
+          :variant="confirmingDelete ? 'destructive' : 'ghost'"
+          size="sm"
+          :class="confirmingDelete ? '' : 'text-destructive'"
+          @click="deleteTab"
+        >
+          <Trash2 /> {{ confirmingDelete ? 'Really delete?' : 'Delete tab' }}
+        </Button>
       </div>
     </div>
 
@@ -144,10 +200,12 @@ function setOrnament(value: string) {
       :bars="content.bars"
       :active-bar-id="activeBarId"
       :selected-event-id="selectedEventId"
+      :insert-index="insertIndex"
       interactive
       class="mb-4"
-      @select-bar="activeBarId = $event; selectedEventId = null"
-      @select-event="(barId, eventId) => { activeBarId = barId; selectedEventId = eventId }"
+      @select-bar="selectBar"
+      @select-event="selectEvent"
+      @insert-at="(barId, index) => { activeBarId = barId; insertIndex = index }"
     />
 
     <div class="mb-8 flex items-center gap-2">
@@ -169,7 +227,12 @@ function setOrnament(value: string) {
         <CardTitle class="text-base">
           Add to bar {{ activeBar ? content.bars.indexOf(activeBar) + 1 : '—' }}
         </CardTitle>
-        <CardDescription>Pick a string, then a position. The dot adds a rest.</CardDescription>
+        <CardDescription>
+          Pick a string, then a position. The dot adds a rest.
+          {{ insertIndex === null || !activeBar
+            ? 'Adding to the end.'
+            : `Inserting at position ${insertIndex + 1} — click a gap in the bar to move the caret.` }}
+        </CardDescription>
       </CardHeader>
       <CardContent class="flex flex-col gap-3">
         <div v-for="s in strings" :key="s" class="flex items-center gap-2">

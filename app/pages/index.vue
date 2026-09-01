@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Plus, Music2, LogOut } from 'lucide-vue-next'
+import { Plus, Music2, LogOut, BookOpen } from 'lucide-vue-next'
 import { getTuning } from '#shared/tab'
 import { formatDate } from '~/lib/utils'
 
@@ -50,6 +50,9 @@ async function signOut() {
         <p class="text-muted-foreground text-sm mt-1">Everything you've written down.</p>
       </div>
       <div class="flex items-center gap-2">
+        <NuxtLink to="/info">
+          <Button variant="ghost" size="icon" title="Notes"><BookOpen /></Button>
+        </NuxtLink>
         <Button variant="ghost" size="icon" title="Sign out" @click="signOut">
           <LogOut />
         </Button>

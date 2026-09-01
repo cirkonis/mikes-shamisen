@@ -36,8 +36,17 @@ function isNote(e: TabEvent): e is Extract<TabEvent, { kind: 'note' }> {
 }
 
 /** A rest sits on the middle line — it belongs to no single string. */
-function yFor(e: TabEvent) {
-  return isNote(e) ? LINE_Y[e.string] : LINE_Y[2]
+function stopYs(e: TabEvent) {
+  return isNote(e) ? e.stops.map((st) => LINE_Y[st.string]) : [LINE_Y[2]]
+}
+
+/** Marks hang off the outside of a chord, not off one arbitrary member of it. */
+function topY(e: TabEvent) {
+  return Math.min(...stopYs(e))
+}
+
+function bottomY(e: TabEvent) {
+  return Math.max(...stopYs(e))
 }
 
 /** Shorter notes get less room, so spacing reads as rhythm. */
@@ -130,28 +139,37 @@ function onEventClick(barId: string, eventId: string) {
             <span
               v-if="isNote(event) && event.ornament"
               class="text-primary absolute left-1/2 -translate-x-1/2 text-[11px] leading-none"
-              :style="{ top: `${yFor(event) - 20}px` }"
+              :style="{ top: `${topY(event) - 20}px` }"
             >{{ ORNAMENT_GLYPHS[event.ornament] }}</span>
 
-            <!-- The number (or the rest's dot), painted over the line -->
+            <!-- One number per stopped string; several stacked make a chord -->
+            <template v-if="isNote(event)">
+              <span
+                v-for="stop in event.stops"
+                :key="stop.string"
+                class="bg-sheet text-sheet-ink absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-1 font-tab text-sm leading-none"
+                :style="{ top: `${LINE_Y[stop.string]}px` }"
+              >{{ stop.fret }}</span>
+            </template>
             <span
+              v-else
               class="bg-sheet text-sheet-ink absolute left-1/2 -translate-x-1/2 -translate-y-1/2 px-1 font-tab text-sm leading-none"
-              :style="{ top: `${yFor(event)}px` }"
-            >{{ isNote(event) ? event.fret : '•' }}</span>
+              :style="{ top: `${LINE_Y[2]}px` }"
+            >•</span>
 
             <!-- Underlines: one for eighths, two for sixteenths -->
             <span
               v-for="n in event.beam"
               :key="n"
               class="bg-sheet-ink absolute left-1/2 h-px -translate-x-1/2"
-              :style="{ top: `${yFor(event) + 8 + n * 3}px`, width: `${widthFor(event) - 12}px` }"
+              :style="{ top: `${bottomY(event) + 8 + n * 3}px`, width: `${widthFor(event) - 12}px` }"
             />
 
             <!-- Suggested fingering, roman so it can't be misread as a tsubo -->
             <span
               v-if="isNote(event) && event.finger"
               class="text-muted-foreground absolute left-1/2 -translate-x-1/2 text-[9px] leading-none"
-              :style="{ top: `${yFor(event) + 20}px` }"
+              :style="{ top: `${bottomY(event) + 20}px` }"
             >{{ FINGER_NUMERALS[event.finger] }}</span>
           </button>
           </template>

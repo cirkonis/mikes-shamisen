@@ -3,22 +3,31 @@ import { ArrowLeft, Eye, Plus, Trash2 } from 'lucide-vue-next'
 import { useDebounceFn } from '@vueuse/core'
 import type { Bar, StringNumber, TabContent, TabEvent } from '#shared/tab'
 import {
-  FINGERS, FINGER_NUMERALS, MAX_FRET, ORNAMENTS, ORNAMENT_LABELS, STRING_LABELS,
-  TUNINGS, newBar, newNote, newRest,
+  BASE_SEMITONE, FINGERS, FINGER_NUMERALS, MAX_FRET, NOTE_NAMES, ORNAMENTS,
+  ORNAMENT_LABELS, STRING_LABELS, TUNINGS, newBar, newNote, newRest,
+  openStrings, parseContent,
 } from '#shared/tab'
 import type { Finger } from '#shared/tab'
 
 const route = useRoute()
 const id = route.params.id as string
 
-const { data: tab } = await useFetch(`/api/tabs/${id}`)
+// deep: true is required — useFetch's data is a shallowRef by default, so the
+// v-model writes to tab.title/tab.tuning would mutate the object without ever
+// triggering a recompute (the derived readouts would silently show stale values).
+const { data: tab } = await useFetch(`/api/tabs/${id}`, { deep: true })
 useHead({ title: () => tab.value?.title ?? 'Tab' })
 
-const content = ref<TabContent>(
-  tab.value?.content ?? { bars: [], barsPerRow: 4 },
-)
-// Tabs written before this setting existed have no value stored.
-if (!content.value.barsPerRow) content.value.barsPerRow = 4
+// parseContent widens older tabs (single-stop notes, missing settings) into the
+// current shape, so the editor never has to branch on which era wrote them.
+const parsed = parseContent(tab.value?.content)
+/** Set when the stored content couldn't be read; saving stays off while it is. */
+const contentError = ref<string | null>(parsed.ok ? null : parsed.issue)
+const content = ref<TabContent>(parsed.content)
+
+/** The three open strings as actual note names, for the header readout. */
+const openStringNames = computed(() =>
+  openStrings(tab.value?.tuning ?? '', content.value.baseSemitone))
 const activeBarId = ref<string | null>(content.value.bars.at(-1)?.id ?? null)
 const selectedEventId = ref<string | null>(null)
 /** Where the next added event lands. null = append to the end of the bar. */
@@ -62,7 +71,11 @@ async function save() {
 // Autosave, but not on every keystroke or every note.
 const queueSave = useDebounceFn(save, 700)
 
-watch(content, queueSave, { deep: true })
+watch(content, () => {
+  // Refuse to overwrite a tab we failed to read in the first place.
+  if (contentError.value) return
+  queueSave()
+}, { deep: true })
 
 function addBar() {
   const bar = newBar()
@@ -149,6 +162,36 @@ function cycleBeam() {
   event.beam = ((event.beam + 1) % 3) as 0 | 1 | 2
 }
 
+/** Is this string part of the selected chord? */
+function stopFor(string: StringNumber) {
+  const event = selected.value?.event
+  if (!event || event.kind !== 'note') return undefined
+  return event.stops.find((st) => st.string === string)
+}
+
+/**
+ * Add or remove a string from the selected note, turning it into a chord.
+ * The last remaining stop can't be removed — an empty note would render as
+ * nothing; deleting the event is what you actually want there.
+ */
+function toggleStop(string: StringNumber) {
+  const event = selected.value?.event
+  if (!event || event.kind !== 'note') return
+  const at = event.stops.findIndex((st) => st.string === string)
+  if (at >= 0) {
+    if (event.stops.length === 1) return
+    event.stops.splice(at, 1)
+    return
+  }
+  event.stops.push({ string, fret: 0 })
+  event.stops.sort((a, b) => a.string - b.string)
+}
+
+function setStopFret(string: StringNumber, value: number) {
+  const stop = stopFor(string)
+  if (stop) stop.fret = Math.min(MAX_FRET, Math.max(0, Math.round(value || 0)))
+}
+
 /** Clicking the finger already set clears it — no separate "none" button. */
 function toggleFinger(finger: Finger) {
   const event = selected.value?.event
@@ -187,7 +230,17 @@ function setOrnament(value: string) {
       </div>
     </div>
 
-    <div class="mb-6 grid gap-4 sm:grid-cols-[1fr_auto]">
+    <Card v-if="contentError" class="border-destructive/50 mb-6">
+      <CardHeader>
+        <CardTitle>This tab couldn't be read</CardTitle>
+        <CardDescription>
+          {{ contentError }} — editing is disabled so the stored version isn't
+          overwritten. The raw content is still safe in the database.
+        </CardDescription>
+      </CardHeader>
+    </Card>
+
+    <div class="mb-6 grid gap-4 sm:grid-cols-[1fr_auto_auto]">
       <div class="flex flex-col gap-2">
         <Label for="title">Title</Label>
         <Input id="title" v-model="tab.title" class="h-11 text-lg" @input="queueSave" />
@@ -205,7 +258,21 @@ function setOrnament(value: string) {
           </option>
         </select>
       </div>
+      <div class="flex flex-col gap-2">
+        <Label for="base">First string</Label>
+        <select
+          id="base"
+          v-model.number="content.baseSemitone"
+          class="border-input h-11 rounded-md border bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+        >
+          <option v-for="(n, i) in NOTE_NAMES" :key="n" :value="i">{{ n }}</option>
+        </select>
+      </div>
     </div>
+
+    <p class="text-muted-foreground -mt-3 mb-5 font-tab text-sm">
+      {{ openStringNames.join('  \u2013  ') }}
+    </p>
 
     <div class="mb-3 flex items-center gap-2">
       <Label for="per-row" class="text-muted-foreground text-xs">Bars per row</Label>
@@ -292,28 +359,28 @@ function setOrnament(value: string) {
       <CardContent class="flex flex-wrap items-end gap-4">
         <template v-if="selected.event.kind === 'note'">
           <div class="flex flex-col gap-2">
-            <Label>String</Label>
-            <div class="flex gap-1">
-              <button
-                v-for="s in strings"
-                :key="s"
-                type="button"
-                class="h-8 w-8 cursor-pointer rounded border text-xs"
-                :class="selected.event.string === s ? 'border-primary bg-primary text-primary-foreground' : 'border-border'"
-                @click="selected.event.string = s"
-              >{{ s }}</button>
+            <Label>Strings <span class="text-muted-foreground font-normal">(tick more than one for a chord)</span></Label>
+            <div class="flex gap-4">
+              <div v-for="s in strings" :key="s" class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  class="h-8 w-9 cursor-pointer rounded border text-xs"
+                  :class="stopFor(s)
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border'"
+                  @click="toggleStop(s)"
+                >{{ STRING_LABELS[s] }}</button>
+                <Input
+                  v-if="stopFor(s)"
+                  :model-value="stopFor(s)!.fret"
+                  type="number"
+                  :min="0"
+                  :max="MAX_FRET"
+                  class="w-16"
+                  @update:model-value="setStopFret(s, Number($event))"
+                />
+              </div>
             </div>
-          </div>
-          <div class="flex flex-col gap-2">
-            <Label for="fret">Position</Label>
-            <Input
-              id="fret"
-              v-model.number="selected.event.fret"
-              type="number"
-              :min="0"
-              :max="MAX_FRET"
-              class="w-24"
-            />
           </div>
           <div class="flex flex-col gap-2">
             <Label>Finger</Label>

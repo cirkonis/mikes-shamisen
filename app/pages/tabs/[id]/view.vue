@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Pencil } from 'lucide-vue-next'
-import { getTuning, openStrings } from '#shared/tab'
+import { getTuning, normalizeContent, openStrings } from '#shared/tab'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -9,7 +9,9 @@ const { data: tab } = await useFetch(`/api/tabs/${id}`)
 useHead({ title: () => tab.value?.title ?? 'Tab' })
 
 const tuning = computed(() => getTuning(tab.value?.tuning ?? ''))
-const strings = computed(() => openStrings(tab.value?.tuning ?? ''))
+const content = computed(() => normalizeContent(tab.value?.content))
+const strings = computed(() =>
+  openStrings(tab.value?.tuning ?? '', content.value.baseSemitone))
 </script>
 
 <template>
@@ -31,9 +33,9 @@ const strings = computed(() => openStrings(tab.value?.tuning ?? ''))
       </p>
     </header>
 
-    <TabSheet :bars="tab.content.bars" :bars-per-row="tab.content.barsPerRow ?? 4" />
+    <TabSheet :bars="content.bars" :bars-per-row="content.barsPerRow" />
 
-    <p v-if="!tab.content.bars.length" class="text-muted-foreground text-sm">
+    <p v-if="!content.bars.length" class="text-muted-foreground text-sm">
       Nothing written yet.
     </p>
   </div>

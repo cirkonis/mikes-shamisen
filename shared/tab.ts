@@ -42,12 +42,18 @@ export const ORNAMENT_LABELS: Record<Ornament, string> = {
   'tie': 'Tie / slur',
 }
 
-export const tabEventSchema = z.discriminatedUnion('kind', [
+/** One stopped string. A note holds one of these, a chord holds two or three. */
+export const stopSchema = z.object({
+  string: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  fret: z.number().int().min(0).max(MAX_FRET),
+})
+
+export const eventUnion = z.discriminatedUnion('kind', [
   z.object({
     id: z.string().min(1),
     kind: z.literal('note'),
-    string: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-    fret: z.number().int().min(0).max(MAX_FRET),
+    /** Struck together. One stop is a single note, more is a chord. */
+    stops: z.array(stopSchema).min(1).max(3),
     beam: z.union([z.literal(0), z.literal(1), z.literal(2)]).default(0),
     ornament: z.enum(ORNAMENTS).nullable().default(null),
     /** Suggested left-hand finger, shown as a roman numeral under the note. */
@@ -62,6 +68,21 @@ export const tabEventSchema = z.discriminatedUnion('kind', [
   }),
 ])
 
+/**
+ * Notes used to carry a single `string`/`fret` pair. Tabs written then are
+ * still in the database untouched, so widen them on the way in rather than
+ * migrating the stored JSON.
+ */
+function widenLegacyEvent(value: unknown) {
+  if (!value || typeof value !== 'object') return value
+  const e = value as Record<string, unknown>
+  if (e.kind !== 'note' || e.stops !== undefined || e.string === undefined) return value
+  const { string, fret, ...rest } = e
+  return { ...rest, stops: [{ string, fret }] }
+}
+
+export const tabEventSchema = z.preprocess(widenLegacyEvent, eventUnion)
+
 export const barSchema = z.object({
   id: z.string().min(1),
   events: z.array(tabEventSchema).max(64),
@@ -72,6 +93,12 @@ export const tabContentSchema = z.object({
   bars: z.array(barSchema).max(512),
   /** How many bars sit on one line. Defaults to 4, the usual phrase length. */
   barsPerRow: z.number().int().min(1).max(8).default(4),
+  /**
+   * What the first string is actually tuned to, as a semitone index into
+   * NOTE_NAMES. The tuning only fixes the intervals, so this is what turns the
+   * tsubo numbers into real pitches. Defaults to B.
+   */
+  baseSemitone: z.number().int().min(0).max(11).default(11),
 })
 
 export type TabEvent = z.infer<typeof tabEventSchema>
@@ -163,7 +190,7 @@ export function getTuning(id: string) {
 
 /** Fresh empty content for a brand-new tab: one bar, waiting for notes. */
 export function emptyTabContent(): TabContent {
-  return { bars: [{ id: newId(), events: [] }], barsPerRow: 4 }
+  return { bars: [{ id: newId(), events: [] }], barsPerRow: 4, baseSemitone: BASE_SEMITONE }
 }
 
 /** Line labels, top to bottom: ichi/ni/san no ito. */
@@ -183,7 +210,37 @@ export const ORNAMENT_GLYPHS: Record<Ornament, string> = {
 }
 
 export function newNote(string: StringNumber, fret: number): NoteEvent {
-  return { id: newId(), kind: 'note', string, fret, beam: 0, ornament: null, finger: null }
+  return {
+    id: newId(),
+    kind: 'note',
+    stops: [{ string, fret }],
+    beam: 0,
+    ornament: null,
+    finger: null,
+  }
+}
+
+/**
+ * Coerce whatever came back from the API into the current shape.
+ *
+ * The GET endpoint hands back the raw jsonb column without validating it, so
+ * this is what stops an older tab from reaching the renderer half-shaped.
+ */
+export function parseContent(raw: unknown) {
+  const parsed = tabContentSchema.safeParse(raw)
+  if (parsed.success) return { ok: true as const, content: parsed.data, issue: null }
+  // Never hand back a silently-emptied tab: the editor autosaves, so treating
+  // unreadable content as "no content" would overwrite the real thing.
+  return {
+    ok: false as const,
+    content: emptyTabContent(),
+    issue: parsed.error.issues[0]?.message ?? 'unrecognised content',
+  }
+}
+
+/** Convenience for read-only callers that have nothing to lose. */
+export function normalizeContent(raw: unknown): TabContent {
+  return parseContent(raw).content
 }
 
 export const FINGERS = [1, 2, 3, 4] as const

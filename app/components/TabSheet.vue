@@ -15,12 +15,15 @@ const props = withDefaults(defineProps<{
   insertIndex?: number | null
   /** Bars per line. */
   barsPerRow?: number
+  /** The note currently sounding during playback. */
+  playingEventId?: string | null
   interactive?: boolean
 }>(), {
   selectedEventId: null,
   activeBarId: null,
   insertIndex: null,
   barsPerRow: 4,
+  playingEventId: null,
   interactive: false,
 })
 
@@ -36,6 +39,13 @@ const STAFF_HEIGHT = 112
 
 /** Enough room for a two-digit tsubo in a single sixteenth slot. */
 const MIN_SLOT_PX = 17
+
+/**
+ * Underlines are a fixed tick under the number, never the width of the note's
+ * slot span. Scaling them with duration draws a *longer* line for a *shorter*
+ * note, which reads as exactly the wrong thing.
+ */
+const UNDERLINE_PX = 13
 
 function isNote(e: TabEvent): e is Extract<TabEvent, { kind: 'note' }> {
   return e.kind === 'note'
@@ -127,6 +137,7 @@ function pct(slot: number, total: number) {
               :class="[
                 interactive ? 'hover:bg-primary/10 cursor-pointer' : 'cursor-default',
                 selectedEventId === item.event.id ? 'bg-primary/15 ring-primary ring-1' : '',
+                playingEventId === item.event.id ? 'bg-primary/25' : '',
               ]"
               :style="{
                 left: pct(item.offset, lay(bar).slots),
@@ -148,7 +159,10 @@ function pct(slot: number, total: number) {
                   :key="stop.string"
                   class="bg-sheet text-sheet-ink absolute left-0 -translate-y-1/2 px-0.5 font-tab text-[13px] leading-none"
                   :style="{ top: `${LINE_Y[stop.string]}px` }"
-                >{{ stop.fret }}</span>
+                >{{ stop.fret }}<span
+                  v-if="stop.sharp"
+                  class="text-primary align-super text-[9px] leading-none"
+                >♯</span></span>
               </template>
               <span
                 v-else
@@ -162,7 +176,7 @@ function pct(slot: number, total: number) {
                 class="bg-sheet-ink absolute left-0.5 h-px"
                 :style="{
                   top: `${bottomY(item.event) + 8 + n * 3}px`,
-                  width: 'calc(100% - 6px)',
+                  width: `${UNDERLINE_PX}px`,
                 }"
               />
 

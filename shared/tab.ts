@@ -46,6 +46,12 @@ export const ORNAMENT_LABELS: Record<Ornament, string> = {
 export const stopSchema = z.object({
   string: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   fret: z.number().int().min(0).max(MAX_FRET),
+  /**
+   * A semitone above the numbered tsubo. Needed because the tsubo numbering is
+   * not chromatic — some neighbours are a whole tone apart, so the note between
+   * them has no number of its own and is written as a sharp.
+   */
+  sharp: z.boolean().default(false),
 })
 
 export const eventUnion = z.discriminatedUnion('kind', [
@@ -78,7 +84,7 @@ function widenLegacyEvent(value: unknown) {
   const e = value as Record<string, unknown>
   if (e.kind !== 'note' || e.stops !== undefined || e.string === undefined) return value
   const { string, fret, ...rest } = e
-  return { ...rest, stops: [{ string, fret }] }
+  return { ...rest, stops: [{ string, fret, sharp: false }] }
 }
 
 export const tabEventSchema = z.preprocess(widenLegacyEvent, eventUnion)
@@ -168,6 +174,28 @@ export function openStrings(tuningId: string, base = BASE_SEMITONE) {
   return tuning.semitones.map((s) => noteName(base + s))
 }
 
+/**
+ * MIDI number of the open first string. `BASE_SEMITONE` is only a pitch class,
+ * so playback needs an octave pinned to it — C2 puts honchoshi's first string
+ * at B2, which is roughly where a shamisen actually sits.
+ */
+export const BASE_OCTAVE_MIDI = 36
+
+export function midiAt(
+  tuningId: string,
+  string: StringNumber,
+  fret: number,
+  base = BASE_SEMITONE,
+) {
+  const tuning = getTuning(tuningId)
+  if (!tuning) return null
+  return BASE_OCTAVE_MIDI + base + tuning.semitones[string - 1]! + semitonesForTsubo(fret)
+}
+
+export function frequencyOf(midi: number) {
+  return 440 * 2 ** ((midi - 69) / 12)
+}
+
 /** The note a given string and tsubo sounds in a given tuning. */
 export function pitchAt(
   tuningId: string,
@@ -213,7 +241,7 @@ export function newNote(string: StringNumber, fret: number): NoteEvent {
   return {
     id: newId(),
     kind: 'note',
-    stops: [{ string, fret }],
+    stops: [{ string, fret, sharp: false }],
     beam: 0,
     ornament: null,
     finger: null,
@@ -296,4 +324,59 @@ export function newBar(): Bar {
 /** Short, collision-safe enough for ids inside a single document. */
 export function newId() {
   return Math.random().toString(36).slice(2, 10)
+}
+
+/** One thing to sound, at a time, for as long as its slots last. */
+export interface ScheduledNote {
+  eventId: string
+  /** Seconds from the start of the piece. */
+  at: number
+  /** Seconds the note is held before its natural decay. */
+  duration: number
+  frequencies: number[]
+}
+
+/**
+ * Turn a tab into a timed list of pitches.
+ *
+ * Kept here rather than in the audio composable because it is pure arithmetic —
+ * tempo, slots and tuning — and worth being able to check without a speaker.
+ */
+export function buildSchedule(
+  content: TabContent,
+  tuningId: string,
+  bpm: number,
+): { notes: ScheduledNote[], duration: number } {
+  const sixteenth = 60 / bpm / 4
+  const notes: ScheduledNote[] = []
+  let barStart = 0
+
+  for (const bar of content.bars) {
+    const { items, slots } = layOutBar(bar)
+    for (const { event, offset, span } of items) {
+      if (event.kind !== 'note') continue
+      const frequencies = event.stops
+        .map((st) => {
+          const midi = midiAt(tuningId, st.string, st.fret, content.baseSemitone)
+          return midi === null ? null : midi + (st.sharp ? 1 : 0)
+        })
+        .filter((midi): midi is number => midi !== null)
+        .map(frequencyOf)
+      if (!frequencies.length) continue
+      notes.push({
+        eventId: event.id,
+        at: (barStart + offset) * sixteenth,
+        duration: span * sixteenth,
+        frequencies,
+      })
+    }
+    // Bars follow one another by their full length, so a half-empty bar still
+    // holds its rest of silence instead of pulling the next bar early.
+    barStart += slots
+  }
+
+  const duration = notes.length
+    ? Math.max(...notes.map((n) => n.at + n.duration))
+    : 0
+  return { notes, duration }
 }

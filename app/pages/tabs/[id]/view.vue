@@ -10,6 +10,7 @@ useHead({ title: () => tab.value?.title ?? 'Tab' })
 
 const tuning = computed(() => getTuning(tab.value?.tuning ?? ''))
 const content = computed(() => normalizeContent(tab.value?.content))
+const playingEventId = ref<string | null>(null)
 const strings = computed(() =>
   openStrings(tab.value?.tuning ?? '', content.value.baseSemitone))
 </script>
@@ -33,7 +34,18 @@ const strings = computed(() =>
       </p>
     </header>
 
-    <TabSheet :bars="content.bars" :bars-per-row="content.barsPerRow" />
+    <TabPlayer
+      v-model:playing-event-id="playingEventId"
+      :content="content"
+      :tuning="tab.tuning"
+      class="mb-6 print:hidden"
+    />
+
+    <TabSheet
+      :bars="content.bars"
+      :bars-per-row="content.barsPerRow"
+      :playing-event-id="playingEventId"
+    />
 
     <p v-if="!content.bars.length" class="text-muted-foreground text-sm">
       Nothing written yet.

@@ -32,6 +32,8 @@ const activeBarId = ref<string | null>(content.value.bars.at(-1)?.id ?? null)
 const selectedEventId = ref<string | null>(null)
 /** Where the next added event lands. null = append to the end of the bar. */
 const insertIndex = ref<number | null>(null)
+/** Highlighted while playback is running. */
+const playingEventId = ref<string | null>(null)
 
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -183,7 +185,7 @@ function toggleStop(string: StringNumber) {
     event.stops.splice(at, 1)
     return
   }
-  event.stops.push({ string, fret: 0 })
+  event.stops.push({ string, fret: 0, sharp: false })
   event.stops.sort((a, b) => a.string - b.string)
 }
 
@@ -274,7 +276,13 @@ function setOrnament(value: string) {
       {{ openStringNames.join('  \u2013  ') }}
     </p>
 
-    <div class="mb-3 flex items-center gap-2">
+    <div class="mb-3 flex flex-wrap items-center gap-x-6 gap-y-3">
+      <TabPlayer
+        v-model:playing-event-id="playingEventId"
+        :content="content"
+        :tuning="tab.tuning"
+      />
+      <div class="flex items-center gap-2">
       <Label for="per-row" class="text-muted-foreground text-xs">Bars per row</Label>
       <select
         id="per-row"
@@ -283,6 +291,7 @@ function setOrnament(value: string) {
       >
         <option v-for="n in [1, 2, 3, 4, 5, 6, 8]" :key="n" :value="n">{{ n }}</option>
       </select>
+      </div>
     </div>
 
     <!-- The sheet -->
@@ -292,6 +301,7 @@ function setOrnament(value: string) {
       :selected-event-id="selectedEventId"
       :insert-index="insertIndex"
       :bars-per-row="content.barsPerRow"
+      :playing-event-id="playingEventId"
       interactive
       class="mb-4"
       @select-bar="selectBar"
@@ -379,6 +389,16 @@ function setOrnament(value: string) {
                   class="w-16"
                   @update:model-value="setStopFret(s, Number($event))"
                 />
+                <button
+                  v-if="stopFor(s)"
+                  type="button"
+                  title="Sharp — a semitone above this tsubo"
+                  class="h-8 w-8 cursor-pointer rounded border text-xs"
+                  :class="stopFor(s)!.sharp
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border'"
+                  @click="stopFor(s)!.sharp = !stopFor(s)!.sharp"
+                >♯</button>
               </div>
             </div>
           </div>

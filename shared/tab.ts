@@ -80,12 +80,15 @@ export const eventUnion = z.discriminatedUnion('kind', [
     /** Suggested left-hand finger, shown as a roman numeral under the note. */
     finger: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
       .nullable().default(null),
+    /** One of three in the space of two. */
+    triplet: z.boolean().default(false),
   }),
   z.object({
     id: z.string().min(1),
     /** A rest — drawn as a dot on the sheet. */
     kind: z.literal('rest'),
     beam: z.union([z.literal(0), z.literal(1), z.literal(2)]).default(0),
+    triplet: z.boolean().default(false),
   }),
 ])
 
@@ -200,6 +203,18 @@ export function noteName(semitonesFromC: number) {
   return NOTE_NAMES[((semitonesFromC % 12) + 12) % 12]
 }
 
+/** The sounding note of one stop, as a name. */
+export function stopNoteName(
+  tuningId: string,
+  stop: { string: StringNumber, fret: number, accidental: Accidental | null },
+  base = BASE_SEMITONE,
+) {
+  const midi = midiAt(tuningId, stop.string, stop.fret, base)
+  if (midi === null) return ''
+  const shift = stop.accidental === 'sharp' ? 1 : stop.accidental === 'flat' ? -1 : 0
+  return noteName(midi + shift)
+}
+
 /** Note names of the three open strings, low to high. */
 export function openStrings(tuningId: string, base = BASE_SEMITONE) {
   const tuning = getTuning(tuningId)
@@ -283,6 +298,7 @@ export function newNote(string: StringNumber, fret: number): NoteEvent {
     beam: 0,
     ornament: null,
     finger: null,
+    triplet: false,
   }
 }
 
@@ -322,7 +338,12 @@ export const FINGER_NUMERALS: Record<Finger, string> = {
  * claims as many as it lasts, so a bar's horizontal layout matches how it is
  * actually counted rather than just listing the notes in order.
  */
-export const SLOTS_PER_BEAT = 4
+/**
+ * 24 divides by both 4 and 3, so duple and triplet subdivisions are both whole
+ * numbers on the same grid — a triplet eighth is 8 slots, a plain eighth 12.
+ * (32nds land on 3, so they cost nothing to add later.)
+ */
+export const SLOTS_PER_BEAT = 24
 
 /** A 4/4 bar. Tabs in another metre carry their own beatsPerBar. */
 export const SLOTS_PER_BAR = SLOTS_PER_BEAT * 4
@@ -331,8 +352,18 @@ export function slotsPerBar(beatsPerBar = 4) {
   return beatsPerBar * SLOTS_PER_BEAT
 }
 
-/** Bare note = quarter = 4 slots; one underline = eighth = 2; two = sixteenth = 1. */
-export const SLOTS_PER_BEAM: Record<0 | 1 | 2, number> = { 0: 4, 1: 2, 2: 1 }
+/** Bare note = quarter; one underline = eighth; two underlines = sixteenth. */
+export const SLOTS_PER_BEAM: Record<0 | 1 | 2, number> = {
+  0: SLOTS_PER_BEAT,
+  1: SLOTS_PER_BEAT / 2,
+  2: SLOTS_PER_BEAT / 4,
+}
+
+/** Three in the time of two, so each note is two thirds of its written value. */
+export const TRIPLET_RATIO = 2 / 3
+
+/** Marked with 三 rather than 3 so it cannot be misread as a tsubo number. */
+export const TRIPLET_GLYPH = '\u4e09'
 
 /**
  * The slot the dividing line sits on — beat 3 in 4/4.
@@ -346,7 +377,8 @@ export function midBarSlot(beatsPerBar = 4) {
 }
 
 export function slotsFor(event: TabEvent) {
-  return SLOTS_PER_BEAM[event.beam]
+  const written = SLOTS_PER_BEAM[event.beam]
+  return event.triplet ? written * TRIPLET_RATIO : written
 }
 
 /**
@@ -371,7 +403,7 @@ export function layOutBar(bar: Bar, beatsPerBar = 4) {
 }
 
 export function newRest(): RestEvent {
-  return { id: newId(), kind: 'rest', beam: 0 }
+  return { id: newId(), kind: 'rest', beam: 0, triplet: false }
 }
 
 export function newBar(): Bar {
@@ -404,7 +436,7 @@ export function buildSchedule(
   tuningId: string,
   bpm: number,
 ): { notes: ScheduledNote[], duration: number } {
-  const sixteenth = 60 / bpm / 4
+  const slotSeconds = 60 / bpm / SLOTS_PER_BEAT
   const notes: ScheduledNote[] = []
   let barStart = 0
 
@@ -423,8 +455,8 @@ export function buildSchedule(
       if (!frequencies.length) continue
       notes.push({
         eventId: event.id,
-        at: (barStart + offset) * sixteenth,
-        duration: span * sixteenth,
+        at: (barStart + offset) * slotSeconds,
+        duration: span * slotSeconds,
         frequencies,
       })
     }

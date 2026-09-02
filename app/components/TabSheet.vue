@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Bar, StringNumber, TabEvent } from '#shared/tab'
 import {
-  ACCIDENTAL_GLYPHS, FINGER_NUMERALS, ORNAMENT_GLYPHS, STRING_LABELS,
-  layOutBar, midBarSlot, slotsPerBar,
+  ACCIDENTAL_GLYPHS, BASE_SEMITONE, FINGER_NUMERALS, ORNAMENT_GLYPHS,
+  STRING_LABELS, TRIPLET_GLYPH, layOutBar, midBarSlot, slotsPerBar, stopNoteName,
 } from '#shared/tab'
 
 const props = withDefaults(defineProps<{
@@ -19,6 +19,10 @@ const props = withDefaults(defineProps<{
   beatsPerBar?: number
   /** The note currently sounding during playback. */
   playingEventId?: string | null
+  /** Needed to name the pitches; ignored unless showNoteNames is on. */
+  tuning?: string
+  baseSemitone?: number
+  showNoteNames?: boolean
   interactive?: boolean
 }>(), {
   selectedEventId: null,
@@ -27,6 +31,9 @@ const props = withDefaults(defineProps<{
   barsPerRow: 4,
   beatsPerBar: 4,
   playingEventId: null,
+  tuning: 'honchoshi',
+  baseSemitone: BASE_SEMITONE,
+  showNoteNames: false,
   interactive: false,
 })
 
@@ -42,18 +49,30 @@ const emit = defineEmits<{
  * The thick first string is the BOTTOM line, as it is written in bunkafu — the
  * lines run low-to-high upward, the opposite of how they are numbered.
  */
-const LINE_Y: Record<StringNumber, number> = { 1: 72, 2: 48, 3: 24 }
+const BASE_LINE_Y: Record<StringNumber, number> = { 1: 84, 2: 60, 3: 36 }
+const BASE_STAFF_HEIGHT = 124
+
+/** Extra room above the staff, only when the pitch-name row is showing. */
+const NAME_ROW_PX = 18
+
+const headroom = computed(() => (props.showNoteNames ? NAME_ROW_PX : 0))
+
+const LINE_Y = computed<Record<StringNumber, number>>(() => ({
+  1: BASE_LINE_Y[1] + headroom.value,
+  2: BASE_LINE_Y[2] + headroom.value,
+  3: BASE_LINE_Y[3] + headroom.value,
+}))
 
 /**
  * Derived rather than written out, so anything spanning the staff keeps working
  * if the line order is ever flipped again — the beat line broke exactly this way.
  */
-const TOP_LINE = Math.min(...Object.values(LINE_Y))
-const BOTTOM_LINE = Math.max(...Object.values(LINE_Y))
-const STAFF_HEIGHT = 112
+const TOP_LINE = computed(() => Math.min(...Object.values(LINE_Y.value)))
+const BOTTOM_LINE = computed(() => Math.max(...Object.values(LINE_Y.value)))
+const STAFF_HEIGHT = computed(() => BASE_STAFF_HEIGHT + headroom.value)
 
-/** Enough room for a two-digit tsubo in a single sixteenth slot. */
-const MIN_SLOT_PX = 17
+/** Enough room for a two-digit tsubo. Applies to the SHORTEST note in a bar. */
+const MIN_NOTE_PX = 18
 
 /**
  * Underlines are a fixed tick under the number, never the width of the note's
@@ -62,12 +81,23 @@ const MIN_SLOT_PX = 17
  */
 const UNDERLINE_PX = 13
 
+/** One layout pass per bar, rather than recomputing it per mark in the template. */
+const layouts = computed(() => {
+  const map = new Map<string, ReturnType<typeof layOutBar>>()
+  for (const bar of props.bars) map.set(bar.id, layOutBar(bar, props.beatsPerBar))
+  return map
+})
+
+function lay(bar: Bar) {
+  return layouts.value.get(bar.id)!
+}
+
 function isNote(e: TabEvent): e is Extract<TabEvent, { kind: 'note' }> {
   return e.kind === 'note'
 }
 
 function stopYs(e: TabEvent) {
-  return isNote(e) ? e.stops.map((st) => LINE_Y[st.string]) : [LINE_Y[2]]
+  return isNote(e) ? e.stops.map((st) => LINE_Y.value[st.string]) : [LINE_Y.value[2]]
 }
 
 /** Marks hang off the outside of a chord, not off one arbitrary member of it. */
@@ -79,15 +109,26 @@ function bottomY(e: TabEvent) {
   return Math.max(...stopYs(e))
 }
 
-/** One layout pass per bar, rather than recomputing it per mark in the template. */
-const layouts = computed(() => {
-  const map = new Map<string, ReturnType<typeof layOutBar>>()
-  for (const bar of props.bars) map.set(bar.id, layOutBar(bar, props.beatsPerBar))
-  return map
-})
+/**
+ * Width a bar needs so its shortest note still fits.
+ *
+ * Keyed off the shortest note rather than the slot grid: slots are a timing
+ * unit, so tying pixels to them would make a finer grid arbitrarily wider for
+ * no visual gain.
+ */
+function minWidthFor(bar: Bar) {
+  const { items, slots } = lay(bar)
+  if (!items.length) return 144
+  const shortest = Math.min(...items.map((i) => i.span))
+  return (slots / shortest) * MIN_NOTE_PX
+}
 
-function lay(bar: Bar) {
-  return layouts.value.get(bar.id)!
+/** Pitches sounding at this event, for the optional name row. */
+function noteNames(e: TabEvent) {
+  if (!isNote(e)) return ''
+  return e.stops
+    .map((st) => stopNoteName(props.tuning, st, props.baseSemitone))
+    .join('/')
 }
 
 /** Slot offsets become percentages so a bar scales with whatever width it gets. */
@@ -104,7 +145,7 @@ function pct(slot: number, total: number) {
       class="bg-sheet relative rounded-lg border transition-colors"
       :style="{
         flexBasis: `calc(${(lay(bar).slots / slotsPerBar(beatsPerBar)) * (100 / barsPerRow)}% - 0.75rem)`,
-        minWidth: `${lay(bar).slots * MIN_SLOT_PX}px`,
+        minWidth: `${minWidthFor(bar)}px`,
       }"
       :class="[
         interactive && activeBarId === bar.id ? 'border-primary ring-primary/25 ring-2' : 'border-border',
@@ -124,7 +165,6 @@ function pct(slot: number, total: number) {
           :style="{ top: `${LINE_Y[s]}px` }"
         >{{ STRING_LABELS[s] }}</span>
 
-        <!-- The staff itself, one slot-grid wide -->
         <div class="relative ml-3 h-full">
           <div
             v-for="s in ([1, 2, 3] as StringNumber[])"
@@ -133,7 +173,7 @@ function pct(slot: number, total: number) {
             :style="{ top: `${LINE_Y[s]}px` }"
           />
 
-          <!-- Beat 3: the halfway point of the bar -->
+          <!-- The dividing beat, snapped to a beat boundary -->
           <div
             class="bg-sheet-line/60 pointer-events-none absolute w-px"
             :style="{
@@ -144,7 +184,6 @@ function pct(slot: number, total: number) {
           />
 
           <template v-for="item in lay(bar).items" :key="item.event.id">
-            <!-- Each event occupies exactly the width of its duration -->
             <button
               type="button"
               :disabled="!interactive"
@@ -161,13 +200,27 @@ function pct(slot: number, total: number) {
               }"
               @click.stop="interactive && emit('selectEvent', bar.id, item.event.id)"
             >
+              <!-- Pitch name, in its own row clear of the staff -->
+              <span
+                v-if="showNoteNames && isNote(item.event)"
+                class="text-muted-foreground absolute left-0 text-[9px] leading-none whitespace-nowrap"
+                :style="{ top: '2px' }"
+              >{{ noteNames(item.event) }}</span>
+
+              <!-- 三 rather than 3, so it cannot be read as a tsubo -->
+              <span
+                v-if="item.event.triplet"
+                class="text-primary absolute left-0 text-[9px] leading-none"
+                :style="{ top: `${topY(item.event) - 32}px` }"
+              >{{ TRIPLET_GLYPH }}</span>
+
               <span
                 v-if="isNote(item.event) && item.event.ornament"
                 class="text-primary absolute left-0 text-[11px] leading-none"
                 :style="{ top: `${topY(item.event) - 20}px` }"
               >{{ ORNAMENT_GLYPHS[item.event.ornament] }}</span>
 
-              <!-- Notes sit at the start of their slot, so the beat lands on them -->
+              <!-- One number per stopped string; several stacked make a chord -->
               <template v-if="isNote(item.event)">
                 <span
                   v-for="stop in item.event.stops"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ArrowLeft, Eye, Plus, Trash2 } from 'lucide-vue-next'
-import { useDebounceFn } from '@vueuse/core'
+import { ArrowLeft, Eye, Music, Plus, Trash2 } from 'lucide-vue-next'
+import { useDebounceFn, useLocalStorage } from '@vueuse/core'
 import type { Bar, StringNumber, TabContent, TabEvent } from '#shared/tab'
 import {
   BASE_SEMITONE, FINGERS, FINGER_NUMERALS, MAX_FRET, NOTE_NAMES, ORNAMENTS,
@@ -34,6 +34,12 @@ const selectedEventId = ref<string | null>(null)
 const insertIndex = ref<number | null>(null)
 /** Highlighted while playback is running. */
 const playingEventId = ref<string | null>(null)
+
+/**
+ * A reading preference rather than a property of the tab, so it is remembered
+ * per device and applies to every tab instead of being saved into each one.
+ */
+const showNoteNames = useLocalStorage('shamisen:note-names', false)
 
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
@@ -291,6 +297,15 @@ function setOrnament(value: string) {
         :content="content"
         :tuning="tab.tuning"
       />
+      <Button
+        :variant="showNoteNames ? 'secondary' : 'ghost'"
+        size="sm"
+        title="Show the sounding pitch above each note"
+        @click="showNoteNames = !showNoteNames"
+      >
+        <Music /> Notes
+      </Button>
+
       <div class="flex items-center gap-2">
         <Label for="beats" class="text-muted-foreground text-xs">Bar length</Label>
         <select
@@ -327,6 +342,9 @@ function setOrnament(value: string) {
       :bars-per-row="content.barsPerRow"
       :beats-per-bar="content.beatsPerBar"
       :playing-event-id="playingEventId"
+      :tuning="tab.tuning"
+      :base-semitone="content.baseSemitone"
+      :show-note-names="showNoteNames"
       interactive
       class="mb-4"
       @select-bar="selectBar"
@@ -460,6 +478,18 @@ function setOrnament(value: string) {
           <Label>Underline</Label>
           <Button variant="outline" size="sm" @click="cycleBeam">
             {{ ['none', 'single', 'double'][selected.event.beam] }}
+          </Button>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <Label>Triplet</Label>
+          <Button
+            :variant="selected.event.triplet ? 'default' : 'outline'"
+            size="sm"
+            title="Three in the time of two"
+            @click="selected.event.triplet = !selected.event.triplet"
+          >
+            三 {{ selected.event.triplet ? 'on' : 'off' }}
           </Button>
         </div>
 

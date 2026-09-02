@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ArrowLeft, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, Music, Pencil } from 'lucide-vue-next'
+import { useLocalStorage } from '@vueuse/core'
 import { getTuning, normalizeContent, openStrings } from '#shared/tab'
 
 const route = useRoute()
@@ -11,6 +12,7 @@ useHead({ title: () => tab.value?.title ?? 'Tab' })
 const tuning = computed(() => getTuning(tab.value?.tuning ?? ''))
 const content = computed(() => normalizeContent(tab.value?.content))
 const playingEventId = ref<string | null>(null)
+const showNoteNames = useLocalStorage('shamisen:note-names', false)
 const strings = computed(() =>
   openStrings(tab.value?.tuning ?? '', content.value.baseSemitone))
 </script>
@@ -21,9 +23,19 @@ const strings = computed(() =>
       <NuxtLink to="/" class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm">
         <ArrowLeft class="size-4" /> Library
       </NuxtLink>
-      <NuxtLink :to="`/tabs/${id}`">
-        <Button variant="outline" size="sm"><Pencil /> Edit</Button>
-      </NuxtLink>
+      <div class="flex items-center gap-2">
+        <Button
+          :variant="showNoteNames ? 'secondary' : 'ghost'"
+          size="sm"
+          title="Show the sounding pitch above each note"
+          @click="showNoteNames = !showNoteNames"
+        >
+          <Music /> Notes
+        </Button>
+        <NuxtLink :to="`/tabs/${id}`">
+          <Button variant="outline" size="sm"><Pencil /> Edit</Button>
+        </NuxtLink>
+      </div>
     </div>
 
     <header class="mb-8">
@@ -46,6 +58,9 @@ const strings = computed(() =>
       :bars-per-row="content.barsPerRow"
       :beats-per-bar="content.beatsPerBar"
       :playing-event-id="playingEventId"
+      :tuning="tab.tuning"
+      :base-semitone="content.baseSemitone"
+      :show-note-names="showNoteNames"
     />
 
     <p v-if="!content.bars.length" class="text-muted-foreground text-sm">

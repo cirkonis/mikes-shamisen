@@ -334,9 +334,15 @@ export function slotsPerBar(beatsPerBar = 4) {
 /** Bare note = quarter = 4 slots; one underline = eighth = 2; two = sixteenth = 1. */
 export const SLOTS_PER_BEAM: Record<0 | 1 | 2, number> = { 0: 4, 1: 2, 2: 1 }
 
-/** The slot the mid-bar line sits on — beat 3 in 4/4, the halfway point always. */
+/**
+ * The slot the dividing line sits on — beat 3 in 4/4.
+ *
+ * Snapped to a beat rather than the literal middle of the bar: in an odd metre
+ * the halfway point falls inside a beat, where a line marks nothing. Rounding up
+ * also gives the usual grouping — 5/4 divides 3+2 and 7/4 divides 4+3.
+ */
 export function midBarSlot(beatsPerBar = 4) {
-  return slotsPerBar(beatsPerBar) / 2
+  return Math.round(beatsPerBar / 2) * SLOTS_PER_BEAT
 }
 
 export function slotsFor(event: TabEvent) {

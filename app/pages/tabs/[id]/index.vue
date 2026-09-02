@@ -301,7 +301,9 @@ function setOrnament(value: string) {
           <option :value="2">2/4</option>
           <option :value="3">3/4</option>
           <option :value="4">4/4</option>
+          <option :value="5">5/4</option>
           <option :value="6">6/4</option>
+          <option :value="7">7/4</option>
         </select>
       </div>
       <div class="flex items-center gap-2">
